@@ -1,0 +1,8 @@
+node_modules
+.pnpm-store
+.env
+dist
+build
+.next
+.expo
+coverage

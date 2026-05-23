@@ -1,0 +1,19 @@
+{
+  "name": "@rurix/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo \"Mobile app will be added after web completion\"",
+    "build": "echo \"Mobile app will be added after web completion\"",
+    "typecheck": "echo \"Mobile app will be added after web completion\"",
+    "lint": "echo \"Mobile app will be added after web completion\"",
+    "clean": "rm -rf .expo .turbo node_modules"
+  },
+  "dependencies": {
+    "@rurix/domain": "workspace:*",
+    "@rurix/permissions": "workspace:*",
+    "@rurix/schemas": "workspace:*",
+    "@rurix/utils": "workspace:*"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@rurix/config": ["./packages/config/src/index.ts"],
+      "@rurix/db": ["./packages/db/src/index.ts"],
+      "@rurix/domain": ["./packages/domain/src/index.ts"],
+      "@rurix/permissions": ["./packages/permissions/src/index.ts"],
+      "@rurix/schemas": ["./packages/schemas/src/index.ts"],
+      "@rurix/ui": ["./packages/ui/src/index.ts"],
+      "@rurix/utils": ["./packages/utils/src/index.ts"]
+    }
+  }
+}
