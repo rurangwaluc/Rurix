@@ -10,6 +10,7 @@ export type AppSection =
   | "expenses"
   | "refunds"
   | "staff"
+  | "locations"
   | "reports"
   | "settings";
 

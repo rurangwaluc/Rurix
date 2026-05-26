@@ -29,6 +29,8 @@ import {
 import { AppSkeleton } from "../../components/app/app-skeleton";
 import { DashboardView } from "../../components/app/dashboard-view";
 import { StaffView } from "../../components/app/staff-view";
+import { StockView } from "../../components/app/stock-view";
+import { LocationsView } from "../../components/app/locations-view";
 import {
   buildAppAccess,
   canOpenSection,
@@ -103,21 +105,7 @@ export default function AppPage() {
         setContext(me);
         setAppAccess(access);
         setActiveSection(access.defaultSection);
-
-        const mainBranch = me.branches.find((branch) => branch.is_main);
-        const firstBranch = mainBranch || me.branches[0];
-
-        if (firstBranch) {
-          setStaffForm((current) => ({
-            ...current,
-            branchId: firstBranch.id,
-          }));
-
-          setStaffLocationAssignForm((current) => ({
-            ...current,
-            branchId: firstBranch.id,
-          }));
-        }
+        hydrateDefaultLocation(me);
 
         if (access.canViewStaff) {
           const staffResult = await listStaff();
@@ -143,6 +131,32 @@ export default function AppPage() {
       active = false;
     };
   }, [router]);
+
+  async function reloadContext() {
+    const me = await getCurrentUser();
+    const access = buildAppAccess(me);
+
+    setContext(me);
+    setAppAccess(access);
+    hydrateDefaultLocation(me);
+  }
+
+  function hydrateDefaultLocation(me: CurrentUserResponse) {
+    const mainBranch = me.branches.find((branch) => branch.is_main);
+    const firstBranch = mainBranch || me.branches[0];
+
+    if (firstBranch) {
+      setStaffForm((current) => ({
+        ...current,
+        branchId: firstBranch.id,
+      }));
+
+      setStaffLocationAssignForm((current) => ({
+        ...current,
+        branchId: firstBranch.id,
+      }));
+    }
+  }
 
   async function reloadStaff() {
     if (!context) {
@@ -742,7 +756,22 @@ export default function AppPage() {
                 />
               ) : null}
 
-              {activeSection !== "dashboard" && activeSection !== "staff" ? (
+              {activeSection === "stock" && canOpenSection(access, "stock") ? (
+                <StockView context={context} appAccess={access} />
+              ) : null}
+
+              {activeSection === "locations" &&
+              canOpenSection(access, "locations") ? (
+                <LocationsView
+                  appAccess={access}
+                  onLocationsChanged={reloadContext}
+                />
+              ) : null}
+
+              {activeSection !== "dashboard" &&
+              activeSection !== "staff" &&
+              activeSection !== "stock" &&
+              activeSection !== "locations" ? (
                 canOpenSection(access, activeSection) ? (
                   <ComingSoonView section={activeSection} />
                 ) : (

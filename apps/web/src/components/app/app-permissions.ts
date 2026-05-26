@@ -4,6 +4,7 @@ import {
   Boxes,
   CircleDollarSign,
   LayoutDashboard,
+  MapPinHouse,
   ReceiptText,
   Settings,
   ShoppingBag,
@@ -25,7 +26,12 @@ export type AppAccess = {
   scopeLabel: string;
   canViewStaff: boolean;
   canManageStaff: boolean;
+  canViewLocations: boolean;
+  canManageLocations: boolean;
   canViewSettings: boolean;
+  canViewStock: boolean;
+  canManageCatalog: boolean;
+  canMoveStock: boolean;
   dashboardMode:
     | "owner"
     | "admin"
@@ -79,6 +85,11 @@ const sectionItems: Record<AppSection, AppNavItem> = {
     label: "Staff",
     icon: UsersRound,
   },
+  locations: {
+    key: "locations",
+    label: "Locations",
+    icon: MapPinHouse,
+  },
   reports: {
     key: "reports",
     label: "Reports",
@@ -117,6 +128,7 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
         "expenses",
         "refunds",
         "staff",
+        "locations",
         "reports",
         "settings",
       ]),
@@ -124,7 +136,12 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
       scopeLabel: "Whole business",
       canViewStaff: true,
       canManageStaff: true,
+      canViewLocations: true,
+      canManageLocations: true,
       canViewSettings: true,
+      canViewStock: true,
+      canManageCatalog: true,
+      canMoveStock: true,
       dashboardMode: "owner",
     };
   }
@@ -144,13 +161,19 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
         "expenses",
         "refunds",
         "staff",
+        "locations",
         "reports",
       ]),
       defaultSection: "dashboard",
       scopeLabel: getBranchScopeLabel(context),
       canViewStaff: true,
       canManageStaff: true,
+      canViewLocations: true,
+      canManageLocations: true,
       canViewSettings: false,
+      canViewStock: true,
+      canManageCatalog: true,
+      canMoveStock: true,
       dashboardMode: "admin",
     };
   }
@@ -169,13 +192,19 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
         "cash",
         "expenses",
         "refunds",
+        "locations",
         "reports",
       ]),
       defaultSection: "dashboard",
       scopeLabel: getBranchScopeLabel(context),
       canViewStaff: false,
       canManageStaff: false,
+      canViewLocations: true,
+      canManageLocations: false,
       canViewSettings: false,
+      canViewStock: true,
+      canManageCatalog: false,
+      canMoveStock: false,
       dashboardMode: "manager",
     };
   }
@@ -215,7 +244,12 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
     scopeLabel: getBranchScopeLabel(context),
     canViewStaff: false,
     canManageStaff: false,
+    canViewLocations: false,
+    canManageLocations: false,
     canViewSettings: false,
+    canViewStock: isStorekeeper,
+    canManageCatalog: false,
+    canMoveStock: isStorekeeper,
     dashboardMode: getStaffDashboardMode({
       isSeller,
       isCashier,

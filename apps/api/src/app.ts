@@ -2,10 +2,13 @@ import { env, isProduction } from "@rurix/config";
 
 import Fastify from "fastify";
 import { authRoutes } from "./modules/auth/auth.routes";
+import { catalogRoutes } from "./modules/catalog/catalog.routes";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
+import { locationsRoutes } from "./modules/locations/locations.routes";
 import { staffRoutes } from "./modules/staff/staff.routes";
+import { stockRoutes } from "./modules/stock/stock.routes";
 
 export async function createApp() {
   const app = Fastify({
@@ -40,6 +43,18 @@ export async function createApp() {
 
   await app.register(staffRoutes, {
     prefix: "/staff",
+  });
+
+  await app.register(catalogRoutes, {
+    prefix: "/catalog",
+  });
+
+  await app.register(stockRoutes, {
+    prefix: "/stock",
+  });
+
+  await app.register(locationsRoutes, {
+    prefix: "/locations",
   });
 
   app.addHook("onClose", async () => {

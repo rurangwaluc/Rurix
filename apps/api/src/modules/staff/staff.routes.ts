@@ -14,8 +14,12 @@ import { normalizeEmail } from "@rurix/utils";
 import {
   contextCanAccessBranch,
   contextHasPermission,
+  contextIsOwner,
+  getContextBranchIds,
   requireAuth,
 } from "../auth/auth.context";
+
+type AuthContext = NonNullable<Awaited<ReturnType<typeof requireAuth>>>;
 
 type DbStaffUser = DbRow & {
   id: string;
@@ -116,15 +120,16 @@ function groupStaffRows(rows: DbStaffListRow[]) {
   return [...staffMap.values()];
 }
 
-async function ensureBranchesExist(branchIds: string[]) {
+async function ensureBranchesExist(businessId: string, branchIds: string[]) {
   const result = await query<DbBranch>(
     `
       select id, name, status
       from branches
-      where id = any($1::uuid[])
+      where business_id = $1
+        and id = any($2::uuid[])
         and status = 'active'
     `,
-    [branchIds],
+    [businessId, branchIds],
   );
 
   const foundIds = new Set(result.rows.map((branch) => branch.id));
@@ -138,7 +143,61 @@ async function ensureBranchesExist(branchIds: string[]) {
   return true;
 }
 
-async function getStaffById(businessId: string, staffId: string) {
+function getVisibleBranchIds(context: AuthContext) {
+  if (contextIsOwner(context)) {
+    return null;
+  }
+
+  return getContextBranchIds(context);
+}
+
+async function contextCanManageStaffMember(
+  context: AuthContext,
+  staffId: string,
+) {
+  if (contextIsOwner(context)) {
+    return true;
+  }
+
+  const branchIds = getContextBranchIds(context);
+
+  if (!branchIds.length) {
+    return false;
+  }
+
+  const result = await query(
+    `
+      select 1
+      from business_members bm
+      inner join branch_memberships brm
+        on brm.business_id = bm.business_id
+        and brm.user_id = bm.user_id
+        and brm.status = 'active'
+      where bm.business_id = $1
+        and bm.user_id = $2
+        and bm.member_type = 'STAFF'
+        and brm.branch_id = any($3::uuid[])
+      limit 1
+    `,
+    [context.business.id, staffId, branchIds],
+  );
+
+  return Boolean(result.rowCount && result.rowCount > 0);
+}
+
+async function getStaffById(
+  businessId: string,
+  staffId: string,
+  visibleBranchIds: string[] | null,
+) {
+  if (visibleBranchIds && visibleBranchIds.length === 0) {
+    return null;
+  }
+
+  const params = visibleBranchIds
+    ? [businessId, staffId, visibleBranchIds]
+    : [businessId, staffId];
+
   const result = await query<DbStaffListRow>(
     `
       select
@@ -158,8 +217,10 @@ async function getStaffById(businessId: string, staffId: string) {
         on brm.user_id = u.id
         and brm.business_id = bm.business_id
         and brm.status = 'active'
+        ${visibleBranchIds ? "and brm.branch_id = any($3::uuid[])" : ""}
       left join branches b
         on b.id = brm.branch_id
+        and b.business_id = bm.business_id
         and b.status = 'active'
       left join branch_member_roles bmr
         on bmr.user_id = u.id
@@ -168,9 +229,23 @@ async function getStaffById(businessId: string, staffId: string) {
       where bm.business_id = $1
         and bm.member_type = 'STAFF'
         and u.id = $2
+        ${
+          visibleBranchIds
+            ? `
+              and exists (
+                select 1
+                from branch_memberships scope_bm
+                where scope_bm.business_id = bm.business_id
+                  and scope_bm.user_id = u.id
+                  and scope_bm.status = 'active'
+                  and scope_bm.branch_id = any($3::uuid[])
+              )
+            `
+            : ""
+        }
       order by b.is_main desc, b.name asc, bmr.role asc
     `,
-    [businessId, staffId],
+    params,
   );
 
   return groupStaffRows(result.rows)[0] || null;
@@ -194,6 +269,19 @@ export async function staffRoutes(app: FastifyInstance) {
       });
     }
 
+    const visibleBranchIds = getVisibleBranchIds(context);
+
+    if (visibleBranchIds && visibleBranchIds.length === 0) {
+      return reply.send({
+        ok: true,
+        staff: [],
+      });
+    }
+
+    const params = visibleBranchIds
+      ? [context.business.id, visibleBranchIds]
+      : [context.business.id];
+
     const result = await query<DbStaffListRow>(
       `
         select
@@ -213,8 +301,10 @@ export async function staffRoutes(app: FastifyInstance) {
           on brm.user_id = u.id
           and brm.business_id = bm.business_id
           and brm.status = 'active'
+          ${visibleBranchIds ? "and brm.branch_id = any($2::uuid[])" : ""}
         left join branches b
           on b.id = brm.branch_id
+          and b.business_id = bm.business_id
           and b.status = 'active'
         left join branch_member_roles bmr
           on bmr.user_id = u.id
@@ -222,9 +312,23 @@ export async function staffRoutes(app: FastifyInstance) {
           and bmr.branch_id = b.id
         where bm.business_id = $1
           and bm.member_type = 'STAFF'
+          ${
+            visibleBranchIds
+              ? `
+                and exists (
+                  select 1
+                  from branch_memberships scope_bm
+                  where scope_bm.business_id = bm.business_id
+                    and scope_bm.user_id = u.id
+                    and scope_bm.status = 'active'
+                    and scope_bm.branch_id = any($2::uuid[])
+                )
+              `
+              : ""
+          }
         order by u.created_at desc, b.is_main desc, b.name asc, bmr.role asc
       `,
-      [context.business.id],
+      params,
     );
 
     return reply.send({
@@ -251,7 +355,11 @@ export async function staffRoutes(app: FastifyInstance) {
     }
 
     const params = request.params as { id: string };
-    const staff = await getStaffById(context.business.id, params.id);
+    const staff = await getStaffById(
+      context.business.id,
+      params.id,
+      getVisibleBranchIds(context),
+    );
 
     if (!staff) {
       return reply.code(404).send({
@@ -292,7 +400,10 @@ export async function staffRoutes(app: FastifyInstance) {
     const branchIds = input.locationAssignments.map((item) => item.branchId);
     const uniqueBranchIds = [...new Set(branchIds)];
 
-    const branchesExist = await ensureBranchesExist(uniqueBranchIds);
+    const branchesExist = await ensureBranchesExist(
+      context.business.id,
+      uniqueBranchIds,
+    );
 
     if (!branchesExist) {
       return reply.code(400).send({
@@ -461,6 +572,14 @@ export async function staffRoutes(app: FastifyInstance) {
     }
 
     const params = request.params as { id: string };
+
+    if (!(await contextCanManageStaffMember(context, params.id))) {
+      return reply.code(403).send({
+        ok: false,
+        message: "You cannot update staff outside your assigned location.",
+      });
+    }
+
     const input = updateStaffDetailsSchema.parse(request.body);
     const email = normalizeEmail(input.email);
     const phone = input.phone?.trim() || null;
@@ -559,7 +678,11 @@ export async function staffRoutes(app: FastifyInstance) {
       });
     }
 
-    const staff = await getStaffById(context.business.id, result.staff.id);
+    const staff = await getStaffById(
+      context.business.id,
+      result.staff.id,
+      getVisibleBranchIds(context),
+    );
 
     return reply.send({
       ok: true,
@@ -585,6 +708,15 @@ export async function staffRoutes(app: FastifyInstance) {
     }
 
     const params = request.params as { id: string };
+
+    if (!(await contextCanManageStaffMember(context, params.id))) {
+      return reply.code(403).send({
+        ok: false,
+        message:
+          "You cannot reset staff access outside your assigned location.",
+      });
+    }
+
     const input = resetStaffPasswordSchema.parse(request.body);
     const passwordHash = await bcrypt.hash(input.password, 12);
 
@@ -677,6 +809,15 @@ export async function staffRoutes(app: FastifyInstance) {
     }
 
     const params = request.params as { id: string };
+
+    if (!(await contextCanManageStaffMember(context, params.id))) {
+      return reply.code(403).send({
+        ok: false,
+        message:
+          "You cannot change staff status outside your assigned location.",
+      });
+    }
+
     const input = updateStaffStatusSchema.parse(request.body);
 
     const result = await query<DbStaffUser>(
@@ -760,6 +901,14 @@ export async function staffRoutes(app: FastifyInstance) {
     const params = request.params as { id: string };
     const input = assignStaffLocationRolesSchema.parse(request.body);
 
+    if (!(await contextCanManageStaffMember(context, params.id))) {
+      return reply.code(403).send({
+        ok: false,
+        message:
+          "You cannot assign responsibilities to staff outside your assigned location.",
+      });
+    }
+
     if (!contextCanAccessBranch(context, input.branchId)) {
       return reply.code(403).send({
         ok: false,
@@ -767,7 +916,9 @@ export async function staffRoutes(app: FastifyInstance) {
       });
     }
 
-    const branchesExist = await ensureBranchesExist([input.branchId]);
+    const branchesExist = await ensureBranchesExist(context.business.id, [
+      input.branchId,
+    ]);
 
     if (!branchesExist) {
       return reply.code(400).send({
@@ -891,6 +1042,14 @@ export async function staffRoutes(app: FastifyInstance) {
     const params = request.params as { id: string };
     const input = removeStaffLocationRolesSchema.parse(request.body);
 
+    if (!(await contextCanManageStaffMember(context, params.id))) {
+      return reply.code(403).send({
+        ok: false,
+        message:
+          "You cannot remove responsibilities from staff outside your assigned location.",
+      });
+    }
+
     if (!contextCanAccessBranch(context, input.branchId)) {
       return reply.code(403).send({
         ok: false,
@@ -929,6 +1088,31 @@ export async function staffRoutes(app: FastifyInstance) {
           `,
           [context.business.id, input.branchId, params.id, input.roles],
         );
+
+        const remainingRoles = await client.query(
+          `
+            select 1
+            from branch_member_roles
+            where business_id = $1
+              and branch_id = $2
+              and user_id = $3
+            limit 1
+          `,
+          [context.business.id, input.branchId, params.id],
+        );
+
+        if (!remainingRoles.rowCount) {
+          await client.query(
+            `
+              update branch_memberships
+              set status = 'inactive'
+              where business_id = $1
+                and branch_id = $2
+                and user_id = $3
+            `,
+            [context.business.id, input.branchId, params.id],
+          );
+        }
       } else {
         await client.query(
           `

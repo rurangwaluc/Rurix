@@ -54,6 +54,10 @@ type DbSession = DbRow & {
 };
 
 const sessionCookieName = "rurix_session";
+const ownerMemberTypes = new Set<BusinessMemberType>([
+  "PRIMARY_OWNER",
+  "OWNER",
+]);
 
 async function getTokenFromRequest(request: FastifyRequest) {
   const cookieToken = request.cookies[sessionCookieName];
@@ -163,17 +167,28 @@ export async function getCurrentUserContext(
     return null;
   }
 
+  const isOwner = ownerMemberTypes.has(membership.member_type);
+
   const branchesResult = await query<DbBranch>(
-    `
-      select b.id, b.name, b.code, b.is_main, b.status, b.address
-      from branches b
-      inner join branch_memberships bm on bm.branch_id = b.id
-      where bm.user_id = $1
-        and bm.status = 'active'
-        and b.status = 'active'
-      order by b.is_main desc, b.name asc
-    `,
-    [user.id],
+    isOwner
+      ? `
+          select id, name, code, is_main, status, address
+          from branches
+          where business_id = $1
+            and status = 'active'
+          order by is_main desc, name asc
+        `
+      : `
+          select b.id, b.name, b.code, b.is_main, b.status, b.address
+          from branches b
+          inner join branch_memberships bm on bm.branch_id = b.id
+          where bm.user_id = $1
+            and bm.business_id = $2
+            and bm.status = 'active'
+            and b.status = 'active'
+          order by b.is_main desc, b.name asc
+        `,
+    isOwner ? [membership.business_id] : [user.id, membership.business_id],
   );
 
   const roleRowsResult = await query<DbBranchRoleRow>(
@@ -181,8 +196,9 @@ export async function getCurrentUserContext(
       select branch_id, role
       from branch_member_roles
       where user_id = $1
+        and business_id = $2
     `,
-    [user.id],
+    [user.id, membership.business_id],
   );
 
   const rolesByBranch = new Map<string, BranchRole[]>();
@@ -244,6 +260,16 @@ export async function requireAuth(
   return context;
 }
 
+export function contextIsOwner(
+  context: Awaited<ReturnType<typeof getCurrentUserContext>>,
+) {
+  if (!context) {
+    return false;
+  }
+
+  return ownerMemberTypes.has(context.membership.member_type);
+}
+
 export function contextHasPermission(
   context: Awaited<ReturnType<typeof getCurrentUserContext>>,
   permission: Permission,
@@ -263,12 +289,19 @@ export function contextCanAccessBranch(
     return false;
   }
 
-  if (
-    context.membership.member_type === "PRIMARY_OWNER" ||
-    context.membership.member_type === "OWNER"
-  ) {
+  if (contextIsOwner(context)) {
     return true;
   }
 
   return context.branches.some((branch) => branch.id === branchId);
+}
+
+export function getContextBranchIds(
+  context: Awaited<ReturnType<typeof getCurrentUserContext>>,
+) {
+  if (!context) {
+    return [];
+  }
+
+  return context.branches.map((branch) => branch.id);
 }
