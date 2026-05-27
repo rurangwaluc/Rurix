@@ -16,10 +16,17 @@ import type { CurrentUserResponse, StaffRole } from "../../lib/api";
 
 const ownerMemberTypes = new Set(["PRIMARY_OWNER", "OWNER"]);
 
+export type BusinessType = "product" | "service" | "product_and_service";
+
 export type AppAccess = {
   isOwner: boolean;
   isAdmin: boolean;
   isManager: boolean;
+  businessType: BusinessType;
+  sellsProducts: boolean;
+  sellsServices: boolean;
+  usesStock: boolean;
+  catalogLabel: string;
   branchRoles: StaffRole[];
   allowedSections: AppNavItem[];
   defaultSection: AppSection;
@@ -44,65 +51,106 @@ export type AppAccess = {
     | "limited";
 };
 
-const sectionItems: Record<AppSection, AppNavItem> = {
-  dashboard: {
-    key: "dashboard",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-  },
-  sales: {
-    key: "sales",
-    label: "Sales",
-    icon: ShoppingBag,
-  },
-  stock: {
-    key: "stock",
-    label: "Stock",
-    icon: Boxes,
-  },
-  payments: {
-    key: "payments",
-    label: "Payments",
-    icon: CircleDollarSign,
-  },
-  cash: {
-    key: "cash",
-    label: "Cash",
-    icon: WalletCards,
-  },
-  expenses: {
-    key: "expenses",
-    label: "Expenses",
-    icon: ReceiptText,
-  },
-  refunds: {
-    key: "refunds",
-    label: "Refunds",
-    icon: Undo2,
-  },
-  staff: {
-    key: "staff",
-    label: "Staff",
-    icon: UsersRound,
-  },
-  locations: {
-    key: "locations",
-    label: "Locations",
-    icon: MapPinHouse,
-  },
-  reports: {
-    key: "reports",
-    label: "Reports",
-    icon: BarChart3,
-  },
-  settings: {
-    key: "settings",
-    label: "Settings",
-    icon: Settings,
-  },
-};
+function getBusinessType(value: string): BusinessType {
+  if (value === "service") return "service";
+  if (value === "product_and_service") return "product_and_service";
+
+  return "product";
+}
+
+function getBusinessCapabilities(context: CurrentUserResponse) {
+  const businessType = getBusinessType(context.business.business_type);
+
+  const sellsProducts =
+    businessType === "product" || businessType === "product_and_service";
+
+  const sellsServices =
+    businessType === "service" || businessType === "product_and_service";
+
+  const usesStock = sellsProducts;
+
+  const catalogLabel =
+    businessType === "service"
+      ? "Services"
+      : businessType === "product_and_service"
+        ? "Products & Services"
+        : "Products & Stock";
+
+  return {
+    businessType,
+    sellsProducts,
+    sellsServices,
+    usesStock,
+    catalogLabel,
+  };
+}
+
+function buildSectionItems(
+  catalogLabel: string,
+): Record<AppSection, AppNavItem> {
+  return {
+    dashboard: {
+      key: "dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+    },
+    sales: {
+      key: "sales",
+      label: "Sales",
+      icon: ShoppingBag,
+    },
+    stock: {
+      key: "stock",
+      label: catalogLabel,
+      icon: Boxes,
+    },
+    payments: {
+      key: "payments",
+      label: "Payments",
+      icon: CircleDollarSign,
+    },
+    cash: {
+      key: "cash",
+      label: "Cash",
+      icon: WalletCards,
+    },
+    expenses: {
+      key: "expenses",
+      label: "Expenses",
+      icon: ReceiptText,
+    },
+    refunds: {
+      key: "refunds",
+      label: "Refunds",
+      icon: Undo2,
+    },
+    staff: {
+      key: "staff",
+      label: "Staff",
+      icon: UsersRound,
+    },
+    locations: {
+      key: "locations",
+      label: "Locations",
+      icon: MapPinHouse,
+    },
+    reports: {
+      key: "reports",
+      label: "Reports",
+      icon: BarChart3,
+    },
+    settings: {
+      key: "settings",
+      label: "Settings",
+      icon: Settings,
+    },
+  };
+}
 
 export function buildAppAccess(context: CurrentUserResponse): AppAccess {
+  const capabilities = getBusinessCapabilities(context);
+  const sectionItems = buildSectionItems(capabilities.catalogLabel);
+
   const isOwner = ownerMemberTypes.has(context.membership.memberType);
   const branchRoles = getBranchRoles(context);
 
@@ -113,8 +161,21 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
   const isStorekeeper = branchRoles.includes("STOREKEEPER");
   const isServiceStaff = branchRoles.includes("SERVICE_STAFF");
 
+  function getSections(keys: AppSection[]) {
+    return keys.map((key) => sectionItems[key]);
+  }
+
+  const baseAccess = {
+    businessType: capabilities.businessType,
+    sellsProducts: capabilities.sellsProducts,
+    sellsServices: capabilities.sellsServices,
+    usesStock: capabilities.usesStock,
+    catalogLabel: capabilities.catalogLabel,
+  };
+
   if (isOwner) {
     return {
+      ...baseAccess,
       isOwner: true,
       isAdmin: false,
       isManager: false,
@@ -139,15 +200,16 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
       canViewLocations: true,
       canManageLocations: true,
       canViewSettings: true,
-      canViewStock: true,
+      canViewStock: capabilities.usesStock,
       canManageCatalog: true,
-      canMoveStock: true,
+      canMoveStock: capabilities.usesStock,
       dashboardMode: "owner",
     };
   }
 
   if (isAdmin) {
     return {
+      ...baseAccess,
       isOwner: false,
       isAdmin: true,
       isManager,
@@ -171,15 +233,16 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
       canViewLocations: true,
       canManageLocations: true,
       canViewSettings: false,
-      canViewStock: true,
+      canViewStock: capabilities.usesStock,
       canManageCatalog: true,
-      canMoveStock: true,
+      canMoveStock: capabilities.usesStock,
       dashboardMode: "admin",
     };
   }
 
   if (isManager) {
     return {
+      ...baseAccess,
       isOwner: false,
       isAdmin: false,
       isManager: true,
@@ -202,7 +265,7 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
       canViewLocations: true,
       canManageLocations: false,
       canViewSettings: false,
-      canViewStock: true,
+      canViewStock: capabilities.usesStock,
       canManageCatalog: false,
       canMoveStock: false,
       dashboardMode: "manager",
@@ -214,6 +277,7 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
   if (isSeller) {
     sectionKeys.add("sales");
     sectionKeys.add("refunds");
+    sectionKeys.add("stock");
   }
 
   if (isCashier) {
@@ -221,9 +285,14 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
     sectionKeys.add("cash");
     sectionKeys.add("expenses");
     sectionKeys.add("refunds");
+    sectionKeys.add("stock");
   }
 
-  if (isStorekeeper) {
+  if (isStorekeeper && capabilities.usesStock) {
+    sectionKeys.add("stock");
+  }
+
+  if (isServiceStaff && capabilities.sellsServices) {
     sectionKeys.add("stock");
   }
 
@@ -232,9 +301,12 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
     isCashier,
     isStorekeeper,
     isServiceStaff,
+    usesStock: capabilities.usesStock,
+    sellsServices: capabilities.sellsServices,
   });
 
   return {
+    ...baseAccess,
     isOwner: false,
     isAdmin: false,
     isManager: false,
@@ -247,9 +319,9 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
     canViewLocations: false,
     canManageLocations: false,
     canViewSettings: false,
-    canViewStock: isStorekeeper,
+    canViewStock: capabilities.usesStock && isStorekeeper,
     canManageCatalog: false,
-    canMoveStock: isStorekeeper,
+    canMoveStock: capabilities.usesStock && isStorekeeper,
     dashboardMode: getStaffDashboardMode({
       isSeller,
       isCashier,
@@ -261,10 +333,6 @@ export function buildAppAccess(context: CurrentUserResponse): AppAccess {
 
 export function canOpenSection(access: AppAccess, section: AppSection) {
   return access.allowedSections.some((item) => item.key === section);
-}
-
-function getSections(keys: AppSection[]) {
-  return keys.map((key) => sectionItems[key]);
 }
 
 function getBranchRoles(context: CurrentUserResponse) {
@@ -298,17 +366,21 @@ function chooseDefaultSection({
   isCashier,
   isStorekeeper,
   isServiceStaff,
+  usesStock,
+  sellsServices,
 }: {
   isSeller: boolean;
   isCashier: boolean;
   isStorekeeper: boolean;
   isServiceStaff: boolean;
+  usesStock: boolean;
+  sellsServices: boolean;
 }): AppSection {
   if (isSeller && isCashier) return "dashboard";
   if (isCashier) return "payments";
   if (isSeller) return "sales";
-  if (isStorekeeper) return "stock";
-  if (isServiceStaff) return "dashboard";
+  if (isStorekeeper && usesStock) return "stock";
+  if (isServiceStaff && sellsServices) return "stock";
 
   return "dashboard";
 }

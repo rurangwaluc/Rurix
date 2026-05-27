@@ -135,6 +135,8 @@ type DrawerMode =
   | "edit"
   | null;
 
+type ActiveTab = "stock" | "catalog" | "history";
+
 type StockViewProps = {
   context: CurrentUserResponse;
   appAccess: AppAccess;
@@ -180,11 +182,11 @@ export function StockView({ context, appAccess }: StockViewProps) {
   const [stock, setStock] = useState<BranchStock[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
 
-  const [activeTab, setActiveTab] = useState<"stock" | "catalog" | "history">(
-    "stock",
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    appAccess.usesStock ? "stock" : "catalog",
   );
   const [catalogFilter, setCatalogFilter] = useState<"ALL" | CatalogItemKind>(
-    "ALL",
+    getDefaultCatalogFilter(appAccess),
   );
   const [search, setSearch] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState(defaultBranchId);
@@ -272,6 +274,14 @@ export function StockView({ context, appAccess }: StockViewProps) {
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
+      if (!appAccess.sellsProducts && item.kind === "PRODUCT") {
+        return false;
+      }
+
+      if (!appAccess.sellsServices && item.kind === "SERVICE") {
+        return false;
+      }
+
       if (catalogFilter !== "ALL" && item.kind !== catalogFilter) {
         return false;
       }
@@ -282,9 +292,15 @@ export function StockView({ context, appAccess }: StockViewProps) {
 
       return value.includes(search.toLowerCase().trim());
     });
-  }, [catalogFilter, items, search]);
+  }, [appAccess.sellsProducts, appAccess.sellsServices, catalogFilter, items, search]);
 
   const latestMovement = movements[0];
+
+  useEffect(() => {
+    if (!appAccess.usesStock && activeTab !== "catalog") {
+      setActiveTab("catalog");
+    }
+  }, [activeTab, appAccess.usesStock]);
 
   useEffect(() => {
     void reloadAll();
@@ -307,12 +323,37 @@ export function StockView({ context, appAccess }: StockViewProps) {
         search?: string;
       } = {};
 
-      if (catalogFilter !== "ALL") {
+      if (appAccess.businessType === "product") {
+        itemParams.kind = "PRODUCT";
+      }
+
+      if (appAccess.businessType === "service") {
+        itemParams.kind = "SERVICE";
+      }
+
+      if (
+        appAccess.businessType === "product_and_service" &&
+        catalogFilter !== "ALL"
+      ) {
         itemParams.kind = catalogFilter;
       }
 
       if (search.trim()) {
         itemParams.search = search.trim();
+      }
+
+      const [categoryResult, itemResult] = await Promise.all([
+        listCategories(),
+        listCatalogItems(itemParams),
+      ]);
+
+      setCategories(categoryResult.categories);
+      setItems(itemResult.items);
+
+      if (!appAccess.usesStock) {
+        setStock([]);
+        setMovements([]);
+        return;
       }
 
       const stockParams: {
@@ -336,16 +377,11 @@ export function StockView({ context, appAccess }: StockViewProps) {
         movementParams.branchId = selectedBranchId;
       }
 
-      const [categoryResult, itemResult, stockResult, movementResult] =
-        await Promise.all([
-          listCategories(),
-          listCatalogItems(itemParams),
-          listStock(stockParams),
-          listStockMovements(movementParams),
-        ]);
+      const [stockResult, movementResult] = await Promise.all([
+        listStock(stockParams),
+        listStockMovements(movementParams),
+      ]);
 
-      setCategories(categoryResult.categories);
-      setItems(itemResult.items);
       setStock(stockResult.stock);
       setMovements(movementResult.movements);
 
@@ -371,7 +407,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Could not load products and stock.",
+          : `Could not load ${appAccess.catalogLabel.toLowerCase()}.`,
       );
     } finally {
       setIsLoading(false);
@@ -388,6 +424,10 @@ export function StockView({ context, appAccess }: StockViewProps) {
   }
 
   function openReceiveDrawer(item?: CatalogItem) {
+    if (!appAccess.usesStock) {
+      return;
+    }
+
     setReceiveForm((current) => ({
       ...current,
       branchId: selectedBranchId || defaultBranchId,
@@ -397,6 +437,10 @@ export function StockView({ context, appAccess }: StockViewProps) {
   }
 
   function openAdjustDrawer(item?: CatalogItem) {
+    if (!appAccess.usesStock) {
+      return;
+    }
+
     setAdjustForm((current) => ({
       ...current,
       branchId: selectedBranchId || defaultBranchId,
@@ -406,6 +450,10 @@ export function StockView({ context, appAccess }: StockViewProps) {
   }
 
   function openAlertDrawer(row: BranchStock) {
+    if (!appAccess.usesStock) {
+      return;
+    }
+
     setAlertForm({
       branchId: row.branchId,
       itemId: row.itemId,
@@ -479,8 +527,8 @@ export function StockView({ context, appAccess }: StockViewProps) {
   async function handleCreateProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!appAccess.canManageCatalog) {
-      setError("You do not have access to create products.");
+    if (!appAccess.canManageCatalog || !appAccess.sellsProducts) {
+      setError("This business is not set up to create products.");
       return;
     }
 
@@ -549,8 +597,8 @@ export function StockView({ context, appAccess }: StockViewProps) {
   async function handleCreateService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!appAccess.canManageCatalog) {
-      setError("You do not have access to create services.");
+    if (!appAccess.canManageCatalog || !appAccess.sellsServices) {
+      setError("This business is not set up to create services.");
       return;
     }
 
@@ -601,8 +649,8 @@ export function StockView({ context, appAccess }: StockViewProps) {
   async function handleReceiveStock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!appAccess.canMoveStock) {
-      setError("You do not have access to receive stock.");
+    if (!appAccess.canMoveStock || !appAccess.usesStock) {
+      setError("This business does not use stock.");
       return;
     }
 
@@ -647,8 +695,8 @@ export function StockView({ context, appAccess }: StockViewProps) {
   async function handleAdjustStock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!appAccess.canMoveStock) {
-      setError("You do not have access to record stock changes.");
+    if (!appAccess.canMoveStock || !appAccess.usesStock) {
+      setError("This business does not use stock.");
       return;
     }
 
@@ -715,8 +763,8 @@ export function StockView({ context, appAccess }: StockViewProps) {
       return;
     }
 
-    if (!appAccess.canMoveStock) {
-      setError("You do not have access to update stock alerts.");
+    if (!appAccess.canMoveStock || !appAccess.usesStock) {
+      setError("This business does not use stock.");
       return;
     }
 
@@ -754,7 +802,17 @@ export function StockView({ context, appAccess }: StockViewProps) {
     }
 
     if (!appAccess.canManageCatalog) {
-      setError("You do not have access to update products or services.");
+      setError("You do not have access to update records.");
+      return;
+    }
+
+    if (selectedItem.kind === "PRODUCT" && !appAccess.sellsProducts) {
+      setError("This business is not set up to update products.");
+      return;
+    }
+
+    if (selectedItem.kind === "SERVICE" && !appAccess.sellsServices) {
+      setError("This business is not set up to update services.");
       return;
     }
 
@@ -816,14 +874,14 @@ export function StockView({ context, appAccess }: StockViewProps) {
         await updateService(selectedItem.id, payload);
       }
 
-      setSuccess("Item updated successfully.");
+      setSuccess("Record updated successfully.");
       closeDrawer();
       await reloadAll();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Could not update item.",
+          : "Could not update this record.",
       );
     } finally {
       setIsUpdatingItem(false);
@@ -833,6 +891,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
   return (
     <section className="mx-auto w-full max-w-6xl space-y-5 pb-28 lg:pb-8">
       <Hero
+        appAccess={appAccess}
         summary={stockSummary}
         latestMovement={latestMovement}
         canManageCatalog={appAccess.canManageCatalog}
@@ -849,45 +908,60 @@ export function StockView({ context, appAccess }: StockViewProps) {
       <section className="sticky top-0 z-20 -mx-4 border-y border-border bg-background/95 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:rounded-section lg:border lg:bg-surface lg:p-4 lg:shadow-card">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
-            <TabButton
-              active={activeTab === "stock"}
-              label="Stock"
-              onClick={() => setActiveTab("stock")}
-            />
+            {appAccess.usesStock ? (
+              <TabButton
+                active={activeTab === "stock"}
+                label="Stock"
+                onClick={() => setActiveTab("stock")}
+              />
+            ) : null}
+
             <TabButton
               active={activeTab === "catalog"}
-              label="Products & services"
+              label={getCatalogTabLabel(appAccess)}
               onClick={() => setActiveTab("catalog")}
             />
-            <TabButton
-              active={activeTab === "history"}
-              label="Stock history"
-              onClick={() => setActiveTab("history")}
-            />
+
+            {appAccess.usesStock ? (
+              <TabButton
+                active={activeTab === "history"}
+                label="Stock history"
+                onClick={() => setActiveTab("history")}
+              />
+            ) : null}
           </div>
 
-          <div className="grid gap-2 md:grid-cols-[220px_1fr_auto]">
-            <select
-              value={selectedBranchId}
-              onChange={(event) => {
-                setSelectedBranchId(event.target.value);
-                setReceiveForm((current) => ({
-                  ...current,
-                  branchId: event.target.value,
-                }));
-                setAdjustForm((current) => ({
-                  ...current,
-                  branchId: event.target.value,
-                }));
-              }}
-              className="min-w-0 rounded-2xl border border-border bg-background px-3 py-3 text-sm font-bold outline-none focus:border-primary"
-            >
-              {context.branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
+          <div
+            className={[
+              "grid gap-2",
+              appAccess.usesStock
+                ? "md:grid-cols-[220px_1fr_auto]"
+                : "md:grid-cols-[1fr_auto]",
+            ].join(" ")}
+          >
+            {appAccess.usesStock ? (
+              <select
+                value={selectedBranchId}
+                onChange={(event) => {
+                  setSelectedBranchId(event.target.value);
+                  setReceiveForm((current) => ({
+                    ...current,
+                    branchId: event.target.value,
+                  }));
+                  setAdjustForm((current) => ({
+                    ...current,
+                    branchId: event.target.value,
+                  }));
+                }}
+                className="min-w-0 rounded-2xl border border-border bg-background px-3 py-3 text-sm font-bold outline-none focus:border-primary"
+              >
+                {context.branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
 
             <div className="relative min-w-0">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -899,7 +973,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
                     void reloadAll();
                   }
                 }}
-                placeholder="Search product, service, code, or barcode"
+                placeholder={getSearchPlaceholder(appAccess)}
                 className="w-full min-w-0 rounded-2xl border border-border bg-background py-3 pl-9 pr-3 text-sm font-bold outline-none focus:border-primary"
               />
             </div>
@@ -917,7 +991,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
 
       {isLoading ? <StockSkeleton /> : null}
 
-      {!isLoading && activeTab === "stock" ? (
+      {!isLoading && activeTab === "stock" && appAccess.usesStock ? (
         <StockSection
           stock={stock}
           visibleCount={visibleStockCount}
@@ -939,6 +1013,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
 
       {!isLoading && activeTab === "catalog" ? (
         <CatalogSection
+          appAccess={appAccess}
           items={filteredItems}
           visibleCount={visibleCatalogCount}
           catalogFilter={catalogFilter}
@@ -955,7 +1030,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
         />
       ) : null}
 
-      {!isLoading && activeTab === "history" ? (
+      {!isLoading && activeTab === "history" && appAccess.usesStock ? (
         <MovementList
           movements={movements}
           visibleCount={visibleMovementCount}
@@ -972,9 +1047,11 @@ export function StockView({ context, appAccess }: StockViewProps) {
       ) : null}
 
       <MobileActionBar
+        appAccess={appAccess}
         canManageCatalog={appAccess.canManageCatalog}
         canMoveStock={appAccess.canMoveStock}
         onAddProduct={() => setDrawerMode("product")}
+        onAddService={() => setDrawerMode("service")}
         onReceiveStock={() => openReceiveDrawer()}
         onAdjustStock={() => openAdjustDrawer()}
       />
@@ -982,6 +1059,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
       <Drawer
         open={drawerMode !== null}
         title={getDrawerTitle(drawerMode, selectedItem)}
+        label={appAccess.catalogLabel}
         onClose={closeDrawer}
       >
         {drawerMode === "details" && selectedItem ? (
@@ -991,9 +1069,12 @@ export function StockView({ context, appAccess }: StockViewProps) {
             movements={movements.filter(
               (movement) => movement.itemId === selectedItem.id,
             )}
+            usesStock={appAccess.usesStock}
             canManageCatalog={appAccess.canManageCatalog}
             canMoveStock={
-              appAccess.canMoveStock && selectedItem.kind === "PRODUCT"
+              appAccess.usesStock &&
+              appAccess.canMoveStock &&
+              selectedItem.kind === "PRODUCT"
             }
             onEdit={() => openEditItem(selectedItem)}
             onReceiveStock={() => openReceiveDrawer(selectedItem)}
@@ -1011,7 +1092,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
           />
         ) : null}
 
-        {drawerMode === "product" ? (
+        {drawerMode === "product" && appAccess.sellsProducts ? (
           <ProductFormView
             form={productForm}
             categories={categories}
@@ -1021,7 +1102,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
           />
         ) : null}
 
-        {drawerMode === "service" ? (
+        {drawerMode === "service" && appAccess.sellsServices ? (
           <ServiceFormView
             form={serviceForm}
             categories={categories}
@@ -1031,7 +1112,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
           />
         ) : null}
 
-        {drawerMode === "receive" ? (
+        {drawerMode === "receive" && appAccess.usesStock ? (
           <ReceiveStockFormView
             form={receiveForm}
             products={stockProducts}
@@ -1042,7 +1123,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
           />
         ) : null}
 
-        {drawerMode === "adjust" ? (
+        {drawerMode === "adjust" && appAccess.usesStock ? (
           <AdjustStockFormView
             form={adjustForm}
             products={stockProducts}
@@ -1053,7 +1134,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
           />
         ) : null}
 
-        {drawerMode === "alert" && alertForm ? (
+        {drawerMode === "alert" && alertForm && appAccess.usesStock ? (
           <StockAlertFormView
             form={alertForm}
             isLoading={isUpdatingAlert}
@@ -1078,6 +1159,7 @@ export function StockView({ context, appAccess }: StockViewProps) {
 }
 
 function Hero({
+  appAccess,
   summary,
   latestMovement,
   canManageCatalog,
@@ -1087,6 +1169,7 @@ function Hero({
   onReceiveStock,
   onAdjustStock,
 }: {
+  appAccess: AppAccess;
   summary: {
     totalOnHand: number;
     totalAvailable: number;
@@ -1109,60 +1192,77 @@ function Hero({
 
         <div className="relative space-y-6">
           <div className="max-w-3xl">
-            <StatusBadge variant="success">Live stock control</StatusBadge>
+            <StatusBadge variant="success">
+              {appAccess.businessType === "service"
+                ? "Service control"
+                : appAccess.businessType === "product_and_service"
+                  ? "Products and services"
+                  : "Product and stock control"}
+            </StatusBadge>
             <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
-              Products, services, and stock truth
+              {getHeroTitle(appAccess)}
             </h1>
             <p className="mt-4 text-sm font-semibold leading-7 text-muted-foreground sm:text-base">
-              Create products and services separately. Receive new stock, record
-              damaged items, report missing stock, and keep every change easy to
-              review.
+              {getHeroDescription(appAccess)}
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <MetricCard label="On hand" value={summary.totalOnHand} />
-            <MetricCard label="Available" value={summary.totalAvailable} />
-            <MetricCard label="Damaged" value={summary.totalDamaged} />
-            <MetricCard label="Low stock" value={summary.lowStockCount} />
-          </div>
+          {appAccess.usesStock ? (
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <MetricCard label="On hand" value={summary.totalOnHand} />
+              <MetricCard label="Available" value={summary.totalAvailable} />
+              <MetricCard label="Damaged" value={summary.totalDamaged} />
+              <MetricCard label="Low stock" value={summary.lowStockCount} />
+            </div>
+          ) : null}
 
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
-            {latestMovement ? (
-              <div className="rounded-3xl border border-border bg-background/80 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-muted-foreground">
-                  Latest stock change
-                </p>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black">
-                      {formatMovementType(latestMovement.movementType)}
-                    </p>
-                    <p className="mt-1 text-xs font-bold text-muted-foreground">
-                      {latestMovement.itemName}
-                    </p>
+            {appAccess.usesStock ? (
+              latestMovement ? (
+                <div className="rounded-3xl border border-border bg-background/80 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-muted-foreground">
+                    Latest stock change
+                  </p>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black">
+                        {formatMovementType(latestMovement.movementType)}
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-muted-foreground">
+                        {latestMovement.itemName}
+                      </p>
+                    </div>
+                    <ArrowRight className="h-5 w-5 text-primary" />
                   </div>
-                  <ArrowRight className="h-5 w-5 text-primary" />
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-3xl border border-border bg-background/80 p-4">
+                  <p className="text-sm font-black">No stock changes yet</p>
+                  <p className="mt-1 text-xs font-bold text-muted-foreground">
+                    Stock changes will appear after stock is created or updated.
+                  </p>
+                </div>
+              )
             ) : (
               <div className="rounded-3xl border border-border bg-background/80 p-4">
-                <p className="text-sm font-black">No stock changes yet</p>
+                <p className="text-sm font-black">Services only</p>
                 <p className="mt-1 text-xs font-bold text-muted-foreground">
-                  Stock changes will appear after stock is created or updated.
+                  This business is set up to sell services, so stock controls
+                  are hidden.
                 </p>
               </div>
             )}
 
             <div className="hidden flex-wrap gap-2 lg:flex">
-              {canManageCatalog ? (
-                <>
-                  <HeroAction label="Add product" onClick={onAddProduct} />
-                  <HeroAction label="Add service" onClick={onAddService} />
-                </>
+              {canManageCatalog && appAccess.sellsProducts ? (
+                <HeroAction label="Add product" onClick={onAddProduct} />
               ) : null}
 
-              {canMoveStock ? (
+              {canManageCatalog && appAccess.sellsServices ? (
+                <HeroAction label="Add service" onClick={onAddService} />
+              ) : null}
+
+              {canMoveStock && appAccess.usesStock ? (
                 <>
                   <HeroAction label="Receive stock" onClick={onReceiveStock} />
                   <HeroAction label="Report issue" onClick={onAdjustStock} />
@@ -1265,6 +1365,7 @@ function StockSection({
 }
 
 function CatalogSection({
+  appAccess,
   items,
   visibleCount,
   catalogFilter,
@@ -1277,6 +1378,7 @@ function CatalogSection({
   onEditItem,
   onOpenItem,
 }: {
+  appAccess: AppAccess;
   items: CatalogItem[];
   visibleCount: number;
   catalogFilter: "ALL" | CatalogItemKind;
@@ -1297,40 +1399,50 @@ function CatalogSection({
       <div className="rounded-section border border-border bg-surface p-4 shadow-card">
         <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <h2 className="text-xl font-black">Products & services</h2>
+            <h2 className="text-xl font-black">
+              {getCatalogSectionTitle(appAccess)}
+            </h2>
             <p className="mt-1 text-sm font-semibold text-muted-foreground">
-              Manage what the business sells: products with stock and services
-              without stock.
+              {getCatalogSectionDescription(appAccess)}
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {[
-              ["ALL", "All"],
-              ["PRODUCT", "Products"],
-              ["SERVICE", "Services"],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() =>
-                  onChangeCatalogFilter(value as "ALL" | CatalogItemKind)
-                }
-                className={[
-                  "rounded-2xl px-3 py-2 text-xs font-black transition",
-                  catalogFilter === value
-                    ? "bg-primary text-primary-foreground"
-                    : "border border-border bg-background text-muted-foreground hover:text-foreground",
-                ].join(" ")}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {appAccess.businessType === "product_and_service" ? (
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["ALL", "All"],
+                ["PRODUCT", "Products"],
+                ["SERVICE", "Services"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() =>
+                    onChangeCatalogFilter(value as "ALL" | CatalogItemKind)
+                  }
+                  className={[
+                    "rounded-2xl px-3 py-2 text-xs font-black transition",
+                    catalogFilter === value
+                      ? "bg-primary text-primary-foreground"
+                      : "border border-border bg-background text-muted-foreground hover:text-foreground",
+                  ].join(" ")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {canManageCatalog ? (
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div
+            className={[
+              "mt-4 grid gap-2",
+              appAccess.sellsProducts && appAccess.sellsServices
+                ? "sm:grid-cols-3"
+                : "sm:grid-cols-2",
+            ].join(" ")}
+          >
             <button
               type="button"
               onClick={onAddCategory}
@@ -1338,35 +1450,44 @@ function CatalogSection({
             >
               Add category
             </button>
-            <button
-              type="button"
-              onClick={onAddProduct}
-              className="rounded-2xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-soft"
-            >
-              Add product
-            </button>
-            <button
-              type="button"
-              onClick={onAddService}
-              className="rounded-2xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-soft"
-            >
-              Add service
-            </button>
+
+            {appAccess.sellsProducts ? (
+              <button
+                type="button"
+                onClick={onAddProduct}
+                className="rounded-2xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-soft"
+              >
+                Add product
+              </button>
+            ) : null}
+
+            {appAccess.sellsServices ? (
+              <button
+                type="button"
+                onClick={onAddService}
+                className="rounded-2xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-soft"
+              >
+                Add service
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
 
       {!canManageCatalog ? (
-        <PermissionCard message="You can view products and services, but you cannot create or edit them." />
+        <PermissionCard
+          message={`You can view ${appAccess.catalogLabel.toLowerCase()}, but you cannot create or edit records.`}
+        />
       ) : null}
 
       <ListHeader
-        title="Products & services"
+        title={getCatalogSectionTitle(appAccess)}
         showing={visibleItems.length}
         total={items.length}
       />
 
       <CatalogList
+        appAccess={appAccess}
         items={visibleItems}
         canManageCatalog={canManageCatalog}
         onEditItem={onEditItem}
@@ -1375,7 +1496,7 @@ function CatalogSection({
 
       {hasMore ? (
         <LoadMoreButton
-          label="Load more products and services"
+          label={`Load more ${appAccess.catalogLabel.toLowerCase()}`}
           onClick={onLoadMore}
           showing={visibleItems.length}
           total={items.length}
@@ -1612,11 +1733,13 @@ function StockCards({
 }
 
 function CatalogList({
+  appAccess,
   items,
   canManageCatalog,
   onEditItem,
   onOpenItem,
 }: {
+  appAccess: AppAccess;
   items: CatalogItem[];
   canManageCatalog: boolean;
   onEditItem: (item: CatalogItem) => void;
@@ -1626,8 +1749,8 @@ function CatalogList({
     return (
       <EmptyState
         icon={Sparkles}
-        title="No products or services yet"
-        description="Add a product for physical stock or add a service for work the business sells."
+        title={`No ${appAccess.catalogLabel.toLowerCase()} yet`}
+        description={getEmptyCatalogDescription(appAccess)}
       />
     );
   }
@@ -1664,7 +1787,10 @@ function CatalogList({
                 label="Category"
                 value={item.categoryName || "Not set"}
               />
-              <InfoLine label="Code" value={item.sku || "Not set"} />
+              <InfoLine
+                label={item.kind === "PRODUCT" ? "Product code" : "Service code"}
+                value={item.sku || "Not set"}
+              />
 
               {item.kind === "PRODUCT" ? (
                 <>
@@ -1739,6 +1865,7 @@ function ItemDetailsView({
   item,
   stock,
   movements,
+  usesStock,
   canManageCatalog,
   canMoveStock,
   onEdit,
@@ -1749,6 +1876,7 @@ function ItemDetailsView({
   item: CatalogItem;
   stock: BranchStock[];
   movements: StockMovement[];
+  usesStock: boolean;
   canManageCatalog: boolean;
   canMoveStock: boolean;
   onEdit: () => void;
@@ -1812,7 +1940,11 @@ function ItemDetailsView({
                   : money(item.serviceCostEstimateCents)
             }
           />
-          <DetailRow label="Code" value={item.sku || "Not set"} />
+          <DetailRow
+            label={item.kind === "PRODUCT" ? "Product code" : "Service code"}
+            value={item.sku || "Not set"}
+          />
+
           {item.kind === "PRODUCT" ? (
             <>
               <DetailRow label="Barcode" value={item.barcode || "Not set"} />
@@ -1822,6 +1954,7 @@ function ItemDetailsView({
               />
             </>
           ) : null}
+
           {item.kind === "SERVICE" ? (
             <DetailRow
               label="Time estimate"
@@ -1866,7 +1999,7 @@ function ItemDetailsView({
         </div>
       </section>
 
-      {item.kind === "PRODUCT" ? (
+      {item.kind === "PRODUCT" && usesStock ? (
         <section className="rounded-section border border-border bg-surface p-5">
           <h4 className="text-lg font-black">Stock by location</h4>
           <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
@@ -1938,42 +2071,44 @@ function ItemDetailsView({
         </section>
       ) : null}
 
-      <section className="rounded-section border border-border bg-surface p-5">
-        <h4 className="text-lg font-black">Recent activity</h4>
+      {item.kind === "PRODUCT" && usesStock ? (
+        <section className="rounded-section border border-border bg-surface p-5">
+          <h4 className="text-lg font-black">Recent activity</h4>
 
-        {movements.length ? (
-          <div className="mt-4 space-y-3">
-            {movements.slice(0, 5).map((movement) => (
-              <div
-                key={movement.id}
-                className="rounded-3xl border border-border bg-background p-4"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <MovementBadge type={movement.movementType} />
-                  <span className="rounded-full bg-surface px-3 py-1 text-xs font-black text-muted-foreground">
-                    {new Date(movement.createdAt).toLocaleString()}
-                  </span>
-                </div>
+          {movements.length ? (
+            <div className="mt-4 space-y-3">
+              {movements.slice(0, 5).map((movement) => (
+                <div
+                  key={movement.id}
+                  className="rounded-3xl border border-border bg-background p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <MovementBadge type={movement.movementType} />
+                    <span className="rounded-full bg-surface px-3 py-1 text-xs font-black text-muted-foreground">
+                      {new Date(movement.createdAt).toLocaleString()}
+                    </span>
+                  </div>
 
-                <div className="mt-3 grid gap-1 text-sm font-bold text-muted-foreground">
-                  <span>Location: {movement.branchName}</span>
-                  <span>Reason: {movement.reason || "Stock change"}</span>
-                  {movement.actorName ? (
-                    <span>Recorded by: {movement.actorName}</span>
-                  ) : null}
-                  {movement.reference ? (
-                    <span>Reference: {movement.reference}</span>
-                  ) : null}
+                  <div className="mt-3 grid gap-1 text-sm font-bold text-muted-foreground">
+                    <span>Location: {movement.branchName}</span>
+                    <span>Reason: {movement.reason || "Stock change"}</span>
+                    {movement.actorName ? (
+                      <span>Recorded by: {movement.actorName}</span>
+                    ) : null}
+                    {movement.reference ? (
+                      <span>Reference: {movement.reference}</span>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-3 text-sm font-semibold leading-6 text-muted-foreground">
-            No recent stock activity for this product.
-          </p>
-        )}
-      </section>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm font-semibold leading-6 text-muted-foreground">
+              No recent stock activity for this product.
+            </p>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -2173,15 +2308,19 @@ function MovementList({
 }
 
 function MobileActionBar({
+  appAccess,
   canManageCatalog,
   canMoveStock,
   onAddProduct,
+  onAddService,
   onReceiveStock,
   onAdjustStock,
 }: {
+  appAccess: AppAccess;
   canManageCatalog: boolean;
   canMoveStock: boolean;
   onAddProduct: () => void;
+  onAddService: () => void;
   onReceiveStock: () => void;
   onAdjustStock: () => void;
 }) {
@@ -2192,7 +2331,7 @@ function MobileActionBar({
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 shadow-2xl backdrop-blur-xl lg:hidden">
       <div className="mx-auto grid max-w-xl gap-2">
-        {canMoveStock ? (
+        {canMoveStock && appAccess.usesStock ? (
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -2212,13 +2351,34 @@ function MobileActionBar({
         ) : null}
 
         {canManageCatalog ? (
-          <button
-            type="button"
-            onClick={onAddProduct}
-            className="rounded-2xl border border-border bg-surface px-3 py-3 text-xs font-black text-foreground"
+          <div
+            className={[
+              "grid gap-2",
+              appAccess.sellsProducts && appAccess.sellsServices
+                ? "grid-cols-2"
+                : "grid-cols-1",
+            ].join(" ")}
           >
-            Add product
-          </button>
+            {appAccess.sellsProducts ? (
+              <button
+                type="button"
+                onClick={onAddProduct}
+                className="rounded-2xl border border-border bg-surface px-3 py-3 text-xs font-black text-foreground"
+              >
+                Add product
+              </button>
+            ) : null}
+
+            {appAccess.sellsServices ? (
+              <button
+                type="button"
+                onClick={onAddService}
+                className="rounded-2xl border border-border bg-surface px-3 py-3 text-xs font-black text-foreground"
+              >
+                Add service
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>
@@ -2228,11 +2388,13 @@ function MobileActionBar({
 function Drawer({
   open,
   title,
+  label,
   children,
   onClose,
 }: {
   open: boolean;
   title: string;
+  label: string;
   children: ReactNode;
   onClose: () => void;
 }) {
@@ -2252,7 +2414,7 @@ function Drawer({
       <aside className="rurix-scrollbar absolute inset-y-0 right-0 flex w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl sm:max-w-xl">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-background/95 p-5 backdrop-blur-xl">
           <div>
-            <StatusBadge variant="primary">Stock control</StatusBadge>
+            <StatusBadge variant="primary">{label}</StatusBadge>
             <h2 className="mt-3 break-words text-2xl font-black">{title}</h2>
           </div>
           <button
@@ -3026,7 +3188,7 @@ function getDrawerTitle(mode: DrawerMode, selectedItem: CatalogItem | null) {
   if (mode === "adjust") return "Record stock issue";
   if (mode === "alert") return "Update stock alert";
   if (mode === "edit") {
-    return selectedItem ? `Edit ${selectedItem.name}` : "Edit item";
+    return selectedItem ? `Edit ${selectedItem.name}` : "Edit record";
   }
 
   return "";
@@ -3044,6 +3206,87 @@ function formatMovementType(type: StockMovement["movementType"]) {
   };
 
   return labels[type];
+}
+
+function getDefaultCatalogFilter(appAccess: AppAccess): "ALL" | CatalogItemKind {
+  if (appAccess.businessType === "product") return "PRODUCT";
+  if (appAccess.businessType === "service") return "SERVICE";
+
+  return "ALL";
+}
+
+function getCatalogTabLabel(appAccess: AppAccess) {
+  if (appAccess.businessType === "product") return "Products";
+  if (appAccess.businessType === "service") return "Services";
+
+  return "Products & services";
+}
+
+function getHeroTitle(appAccess: AppAccess) {
+  if (appAccess.businessType === "service") {
+    return "Services your business sells";
+  }
+
+  if (appAccess.businessType === "product_and_service") {
+    return "Products, services, and stock truth";
+  }
+
+  return "Products and stock truth";
+}
+
+function getHeroDescription(appAccess: AppAccess) {
+  if (appAccess.businessType === "service") {
+    return "Create services, set prices, estimate time, and keep the service catalog clean without showing stock controls.";
+  }
+
+  if (appAccess.businessType === "product_and_service") {
+    return "Create products and services separately. Receive stock for products, record issues, and keep every change easy to review.";
+  }
+
+  return "Create products, receive new stock, record damaged or missing items, and keep every stock change easy to review.";
+}
+
+function getCatalogSectionTitle(appAccess: AppAccess) {
+  if (appAccess.businessType === "product") return "Products";
+  if (appAccess.businessType === "service") return "Services";
+
+  return "Products & services";
+}
+
+function getCatalogSectionDescription(appAccess: AppAccess) {
+  if (appAccess.businessType === "product") {
+    return "Manage the physical products the business sells and tracks in stock.";
+  }
+
+  if (appAccess.businessType === "service") {
+    return "Manage the services the business sells without stock tracking.";
+  }
+
+  return "Manage what the business sells: products with stock and services without stock.";
+}
+
+function getSearchPlaceholder(appAccess: AppAccess) {
+  if (appAccess.businessType === "product") {
+    return "Search product, code, or barcode";
+  }
+
+  if (appAccess.businessType === "service") {
+    return "Search service or service code";
+  }
+
+  return "Search product, service, code, or barcode";
+}
+
+function getEmptyCatalogDescription(appAccess: AppAccess) {
+  if (appAccess.businessType === "product") {
+    return "Add a product so the business can sell it and track stock by location.";
+  }
+
+  if (appAccess.businessType === "service") {
+    return "Add a service so the business can sell work, time, or appointments.";
+  }
+
+  return "Add a product for physical stock or add a service for work the business sells.";
 }
 
 function toInt(value: string, fallback = 0) {

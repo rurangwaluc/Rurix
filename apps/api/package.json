@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "bootstrap:business": "tsx src/scripts/bootstrap-business.ts",
     "lint": "echo \"Lint not configured yet\"",
     "clean": "rm -rf dist .turbo node_modules"
   },
