@@ -8,6 +8,7 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "bootstrap:business": "tsx src/scripts/bootstrap-business.ts",
+    "update:business-type": "tsx src/scripts/update-business-type.ts",
     "lint": "echo \"Lint not configured yet\"",
     "clean": "rm -rf dist .turbo node_modules"
   },
