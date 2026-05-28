@@ -294,7 +294,9 @@ export type StockMovementType =
   | "DAMAGED_REPORTED"
   | "DAMAGED_RESTORED"
   | "MISSING_REPORTED"
-  | "STOLEN_REPORTED";
+  | "STOLEN_REPORTED"
+  | "STOCK_TRANSFER_OUT"
+  | "STOCK_TRANSFER_IN";
 
 export type StockMovement = {
   id: string;
