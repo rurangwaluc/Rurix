@@ -14,6 +14,9 @@ const partnerDefaultPermissions: Permission[] = [
   "CATALOG_VIEW",
   "STOCK_VIEW",
   "STOCK_MOVEMENT_VIEW",
+  "STOCK_TRANSFER_VIEW",
+  "SUPPLIER_VIEW",
+  "PURCHASE_ORDER_VIEW",
   "ORDER_VIEW",
   "PAYMENT_VIEW",
   "REPORT_VIEW",
@@ -57,12 +60,24 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
     "STOCK_RESERVE",
     "STOCK_RELEASE",
     "STOCK_ADJUSTMENT_REQUEST",
+    "STOCK_TRANSFER_VIEW",
+    "STOCK_TRANSFER_CREATE",
 
     "SERVICE_VIEW",
 
     "EXPENSE_VIEW",
 
     "SUPPLIER_VIEW",
+    "SUPPLIER_CREATE",
+    "SUPPLIER_UPDATE",
+
+    "PURCHASE_ORDER_VIEW",
+    "PURCHASE_ORDER_CREATE",
+    "PURCHASE_ORDER_UPDATE",
+    "PURCHASE_ORDER_MARK_ORDERED",
+    "PURCHASE_ORDER_CANCEL",
+    "PURCHASE_ORDER_RECEIVE",
+    "PURCHASE_ORDER_SEND",
 
     "CASH_SESSION_VIEW",
 
@@ -91,11 +106,16 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
     "STOCK_LOSS_REPORT",
     "STOCK_MOVEMENT_VIEW",
     "STOCK_ADJUSTMENT_REQUEST",
+    "STOCK_TRANSFER_VIEW",
 
     "SERVICE_VIEW",
 
     "EXPENSE_VIEW",
     "EXPENSE_APPROVE",
+
+    "SUPPLIER_VIEW",
+
+    "PURCHASE_ORDER_VIEW",
 
     "CASH_SESSION_VIEW",
 
@@ -159,6 +179,11 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
     "STOCK_RESERVE",
     "STOCK_RELEASE",
     "STOCK_ADJUSTMENT_REQUEST",
+    "STOCK_TRANSFER_VIEW",
+    "STOCK_TRANSFER_CREATE",
+
+    "PURCHASE_ORDER_VIEW",
+    "PURCHASE_ORDER_RECEIVE",
 
     "OFFLINE_SYNC_SUBMIT",
   ],
