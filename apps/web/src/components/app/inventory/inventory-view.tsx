@@ -43,6 +43,7 @@ import {
 import type { AppAccess } from "../app-permissions";
 import { StatusBadge } from "../../status-badge";
 import { SuppliersPanel } from "./suppliers-panel";
+import { StockTransfersPanel } from "./stock-transfers-panel";
 
 const STOCK_PAGE_SIZE = 6;
 const CATALOG_PAGE_SIZE = 6;
@@ -136,7 +137,7 @@ type DrawerMode =
   | "edit"
   | null;
 
-type ActiveTab = "stock" | "catalog" | "suppliers" | "history";
+type ActiveTab = "stock" | "catalog" | "suppliers" | "transfers" | "history";
 
 type StockViewProps = {
   context: CurrentUserResponse;
@@ -314,6 +315,14 @@ export function StockView({ context, appAccess }: StockViewProps) {
     (context.membership.permissions.includes("SUPPLIER_CREATE") ||
       context.membership.permissions.includes("SUPPLIER_UPDATE"));
 
+  const canViewTransfers =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("STOCK_TRANSFER_VIEW");
+
+  const canCreateTransfer =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("STOCK_TRANSFER_CREATE");
+
   useEffect(() => {
     if (!appAccess.usesStock && activeTab !== "catalog") {
       setActiveTab("catalog");
@@ -322,8 +331,13 @@ export function StockView({ context, appAccess }: StockViewProps) {
 
     if (activeTab === "suppliers" && !canViewSuppliers) {
       setActiveTab(appAccess.usesStock ? "stock" : "catalog");
+      return;
     }
-  }, [activeTab, appAccess.usesStock, canViewSuppliers]);
+
+    if (activeTab === "transfers" && !canViewTransfers) {
+      setActiveTab(appAccess.usesStock ? "stock" : "catalog");
+    }
+  }, [activeTab, appAccess.usesStock, canViewSuppliers, canViewTransfers]);
 
   useEffect(() => {
     void reloadAll();
@@ -953,6 +967,14 @@ export function StockView({ context, appAccess }: StockViewProps) {
               />
             ) : null}
 
+            {canViewTransfers ? (
+              <TabButton
+                active={activeTab === "transfers"}
+                label="Transfers"
+                onClick={() => setActiveTab("transfers")}
+              />
+            ) : null}
+
             {appAccess.usesStock ? (
               <TabButton
                 active={activeTab === "history"}
@@ -1085,6 +1107,15 @@ export function StockView({ context, appAccess }: StockViewProps) {
           search={search}
           refreshKey={inventoryPanelRefreshKey}
           canManageSuppliers={canManageSuppliers}
+        />
+      ) : null}
+
+      {activeTab === "transfers" && canViewTransfers ? (
+        <StockTransfersPanel
+          search={search}
+          refreshKey={inventoryPanelRefreshKey}
+          branches={context.branches}
+          canCreateTransfer={canCreateTransfer}
         />
       ) : null}
 
