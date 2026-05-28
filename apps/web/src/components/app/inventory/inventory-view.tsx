@@ -42,6 +42,7 @@ import {
 } from "../../../lib/api";
 import type { AppAccess } from "../app-permissions";
 import { StatusBadge } from "../../status-badge";
+import { SuppliersPanel } from "./suppliers-panel";
 
 const STOCK_PAGE_SIZE = 6;
 const CATALOG_PAGE_SIZE = 6;
@@ -135,7 +136,7 @@ type DrawerMode =
   | "edit"
   | null;
 
-type ActiveTab = "stock" | "catalog" | "history";
+type ActiveTab = "stock" | "catalog" | "suppliers" | "history";
 
 type StockViewProps = {
   context: CurrentUserResponse;
@@ -197,6 +198,8 @@ export function StockView({ context, appAccess }: StockViewProps) {
     useState(CATALOG_PAGE_SIZE);
   const [visibleMovementCount, setVisibleMovementCount] =
     useState(HISTORY_PAGE_SIZE);
+
+  const [inventoryPanelRefreshKey, setInventoryPanelRefreshKey] = useState(0);
 
   const [productForm, setProductForm] =
     useState<ProductForm>(initialProductForm);
@@ -302,11 +305,25 @@ export function StockView({ context, appAccess }: StockViewProps) {
 
   const latestMovement = movements[0];
 
+  const canViewSuppliers =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("SUPPLIER_VIEW");
+
+  const canManageSuppliers =
+    appAccess.usesStock &&
+    (context.membership.permissions.includes("SUPPLIER_CREATE") ||
+      context.membership.permissions.includes("SUPPLIER_UPDATE"));
+
   useEffect(() => {
     if (!appAccess.usesStock && activeTab !== "catalog") {
       setActiveTab("catalog");
+      return;
     }
-  }, [activeTab, appAccess.usesStock]);
+
+    if (activeTab === "suppliers" && !canViewSuppliers) {
+      setActiveTab(appAccess.usesStock ? "stock" : "catalog");
+    }
+  }, [activeTab, appAccess.usesStock, canViewSuppliers]);
 
   useEffect(() => {
     void reloadAll();
@@ -928,6 +945,14 @@ export function StockView({ context, appAccess }: StockViewProps) {
               onClick={() => setActiveTab("catalog")}
             />
 
+            {canViewSuppliers ? (
+              <TabButton
+                active={activeTab === "suppliers"}
+                label="Suppliers"
+                onClick={() => setActiveTab("suppliers")}
+              />
+            ) : null}
+
             {appAccess.usesStock ? (
               <TabButton
                 active={activeTab === "history"}
@@ -986,7 +1011,10 @@ export function StockView({ context, appAccess }: StockViewProps) {
 
             <button
               type="button"
-              onClick={() => void reloadAll()}
+              onClick={() => {
+                void reloadAll();
+                setInventoryPanelRefreshKey((current) => current + 1);
+              }}
               className="rounded-2xl border border-border bg-background px-4 py-3 text-sm font-black text-muted-foreground transition hover:text-foreground"
             >
               Refresh
@@ -1049,6 +1077,14 @@ export function StockView({ context, appAccess }: StockViewProps) {
               openItemDetails(item);
             }
           }}
+        />
+      ) : null}
+
+      {activeTab === "suppliers" && canViewSuppliers ? (
+        <SuppliersPanel
+          search={search}
+          refreshKey={inventoryPanelRefreshKey}
+          canManageSuppliers={canManageSuppliers}
         />
       ) : null}
 
