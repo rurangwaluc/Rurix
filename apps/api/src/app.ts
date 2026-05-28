@@ -7,8 +7,11 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import { locationsRoutes } from "./modules/locations/locations.routes";
+import { purchaseOrdersRoutes } from "./modules/purchase-orders/purchase-orders.routes";
 import { staffRoutes } from "./modules/staff/staff.routes";
 import { stockRoutes } from "./modules/stock/stock.routes";
+import { stockTransfersRoutes } from "./modules/stock-transfers/stock-transfers.routes";
+import { suppliersRoutes } from "./modules/suppliers/suppliers.routes";
 
 export async function createApp() {
   const app = Fastify({
@@ -51,6 +54,18 @@ export async function createApp() {
 
   await app.register(stockRoutes, {
     prefix: "/stock",
+  });
+
+  await app.register(stockTransfersRoutes, {
+    prefix: "/stock-transfers",
+  });
+
+  await app.register(suppliersRoutes, {
+    prefix: "/suppliers",
+  });
+
+  await app.register(purchaseOrdersRoutes, {
+    prefix: "/purchase-orders",
   });
 
   await app.register(locationsRoutes, {
