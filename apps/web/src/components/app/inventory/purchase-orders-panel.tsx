@@ -631,14 +631,38 @@ export function PurchaseOrdersPanel({
 
       if (method === "whatsapp" && result.whatsappUrl) {
         window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+        setSuccess(
+          "WhatsApp message opened. Send it manually to the supplier.",
+        );
+        await loadSelectedOrder(selectedOrder.purchaseOrder.id);
+        return;
       }
 
-      setSuccess(
-        method === "email" && result.sendEvent.status === "not_configured"
-          ? "Email sending is not configured, but the send event was recorded."
-          : "Purchase order send event recorded.",
-      );
+      if (method === "email" && result.sendEvent.status === "not_configured") {
+        setError(
+          result.sendEvent.failureReason ||
+            "Email sending is not configured on this deployment.",
+        );
+        await loadSelectedOrder(selectedOrder.purchaseOrder.id);
+        return;
+      }
 
+      if (method === "email" && result.sendEvent.status === "completed") {
+        setSuccess("Purchase order email sent to the supplier.");
+        await loadSelectedOrder(selectedOrder.purchaseOrder.id);
+        return;
+      }
+
+      if (result.sendEvent.status === "failed") {
+        setError(
+          result.sendEvent.failureReason ||
+            "Purchase order could not be shared with the supplier.",
+        );
+        await loadSelectedOrder(selectedOrder.purchaseOrder.id);
+        return;
+      }
+
+      setSuccess("Purchase order sharing event recorded.");
       await loadSelectedOrder(selectedOrder.purchaseOrder.id);
     } catch (caughtError) {
       setError(
@@ -1217,7 +1241,7 @@ function PurchaseOrderCommandCenter({
                 />
                 <ActionButton
                   label={
-                    sendingMethod === "email" ? "Recording..." : "Email event"
+                    sendingMethod === "email" ? "Sending..." : "Send email"
                   }
                   loading={sendingMethod === "email"}
                   onClick={() => onSend("email")}
@@ -2048,7 +2072,7 @@ function OrderStatusBadge({ status }: { status: PurchaseOrderStatus }) {
   const labels: Record<PurchaseOrderStatus, string> = {
     draft: "Draft",
     ordered: "Ordered",
-    partly_received: "Partly received",
+    partly_received: "Partially received",
     fully_received: "Fully received",
     cancelled: "Cancelled",
   };
@@ -2173,7 +2197,7 @@ function getOrderProgress({
 
 function formatSendMethod(method: PurchaseOrderSendEvent["method"]) {
   const labels: Record<PurchaseOrderSendEvent["method"], string> = {
-    pdf_download: "PDF event",
+    pdf_download: "PDF download",
     email: "Email",
     whatsapp: "WhatsApp",
   };

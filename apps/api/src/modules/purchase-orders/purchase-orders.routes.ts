@@ -15,6 +15,12 @@ import {
   contextHasPermission,
   requireAuth,
 } from "../auth/auth.context";
+import {
+  buildPurchaseOrderPlainMessage,
+  generatePurchaseOrderPdf,
+  getPurchaseOrderPdfFileName,
+  sendPurchaseOrderEmail,
+} from "./purchase-order-documents";
 
 type BusinessType = "product" | "service" | "product_and_service";
 
@@ -727,43 +733,17 @@ async function loadPurchaseOrderDetail(input: {
 }
 
 function buildPurchaseOrderMessage(input: {
+  business: ReturnType<typeof getDocumentBusiness>;
+  sender: ReturnType<typeof getDocumentSender>;
   order: ReturnType<typeof mapPurchaseOrder>;
   items: ReturnType<typeof mapPurchaseOrderItem>[];
 }) {
-  const lines = [
-    `Hello ${input.order.supplierName},`,
-    "",
-    "Please find our purchase order details below.",
-    "",
-    `Purchase order: ${input.order.orderNumber}`,
-  ];
-
-  if (input.order.deliveryBranchName) {
-    lines.push(`Delivery location: ${input.order.deliveryBranchName}`);
-  }
-
-  if (input.order.expectedDeliveryDate) {
-    lines.push(
-      `Expected delivery: ${String(input.order.expectedDeliveryDate).slice(0, 10)}`,
-    );
-  }
-
-  lines.push("", "Products:");
-
-  input.items.forEach((item, index) => {
-    lines.push(`${index + 1}. ${item.itemName}`);
-    lines.push(`   Quantity: ${item.quantityOrdered}`);
-
-    if (item.expectedUnitCostCents !== null) {
-      lines.push(
-        `   Expected unit cost: ${Math.round(item.expectedUnitCostCents / 100)}`,
-      );
-    }
+  return buildPurchaseOrderPlainMessage({
+    business: input.business,
+    sender: input.sender,
+    order: input.order,
+    items: input.items,
   });
-
-  lines.push("", "Please confirm availability and delivery time.");
-
-  return lines.join("\n");
 }
 
 function buildWhatsappUrl(input: { phone: string | null; message: string }) {
@@ -774,6 +754,33 @@ function buildWhatsappUrl(input: { phone: string | null; message: string }) {
   }
 
   return `https://wa.me/${phone}?text=${encodeURIComponent(input.message)}`;
+}
+
+function getDocumentBusiness(context: {
+  business: {
+    name?: string;
+    legal_name?: string | null;
+    legalName?: string | null;
+  };
+}) {
+  return {
+    name: context.business.name || "Business",
+    legalName:
+      context.business.legal_name || context.business.legalName || null,
+  };
+}
+
+function getDocumentSender(context: {
+  user: {
+    full_name?: string | null;
+    fullName?: string | null;
+    email?: string | null;
+  };
+}) {
+  return {
+    name: context.user.full_name || context.user.fullName || null,
+    email: context.user.email || null,
+  };
 }
 
 export async function purchaseOrdersRoutes(app: FastifyInstance) {
@@ -948,6 +955,100 @@ export async function purchaseOrdersRoutes(app: FastifyInstance) {
         receiptItems: detail.receiptItems,
         sendEvents: detail.sendEvents,
       };
+    } catch (error) {
+      return purchaseOrderErrorReply(reply, error);
+    }
+  });
+
+  app.get("/:id/pdf", async (request, reply) => {
+    const context = await requireAuth(app, request);
+
+    if (!context) {
+      return reply.status(401).send({
+        ok: false,
+        message: "Please sign in again.",
+      });
+    }
+
+    const blockedByBusinessType = inventoryBusinessGuard(
+      reply,
+      context.business.business_type,
+    );
+
+    if (blockedByBusinessType) {
+      return blockedByBusinessType;
+    }
+
+    if (!contextHasPermission(context, "PURCHASE_ORDER_SEND")) {
+      return reply.status(403).send({
+        ok: false,
+        message: "You do not have access to download purchase orders.",
+      });
+    }
+
+    const params = request.params as { id: string };
+
+    try {
+      const detail = await loadPurchaseOrderDetail({
+        businessId: context.business.id,
+        purchaseOrderId: params.id,
+      });
+
+      const documentBusiness = getDocumentBusiness(context);
+      const documentSender = getDocumentSender(context);
+
+      const pdfBuffer = await generatePurchaseOrderPdf({
+        business: documentBusiness,
+        sender: documentSender,
+        order: detail.order,
+        items: detail.items,
+      });
+
+      const message = buildPurchaseOrderPlainMessage({
+        business: documentBusiness,
+        sender: documentSender,
+        order: detail.order,
+        items: detail.items,
+      });
+
+      await query(
+        `
+        insert into purchase_order_send_events (
+          business_id,
+          purchase_order_id,
+          send_method,
+          recipient_name,
+          recipient_email,
+          recipient_phone,
+          subject,
+          message,
+          status,
+          failure_reason,
+          sent_by_user_id
+        )
+        values ($1, $2, 'pdf_download', $3, $4, $5, $6, $7, 'completed', null, $8)
+      `,
+        [
+          context.business.id,
+          params.id,
+          detail.order.supplierContactPerson || detail.order.supplierName,
+          detail.order.supplierEmail,
+          detail.order.supplierPhone,
+          `Purchase order ${detail.order.orderNumber}`,
+          message,
+          context.user.id,
+        ],
+      );
+
+      return reply
+        .header("Content-Type", "application/pdf")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${getPurchaseOrderPdfFileName(
+            detail.order.orderNumber,
+          )}"`,
+        )
+        .send(pdfBuffer);
     } catch (error) {
       return purchaseOrderErrorReply(reply, error);
     }
@@ -1861,7 +1962,12 @@ export async function purchaseOrdersRoutes(app: FastifyInstance) {
         purchaseOrderId: params.id,
       });
 
+      const documentBusiness = getDocumentBusiness(context);
+      const documentSender = getDocumentSender(context);
+
       const defaultMessage = buildPurchaseOrderMessage({
+        business: documentBusiness,
+        sender: documentSender,
         order: detail.order,
         items: detail.items,
       });
@@ -1883,8 +1989,37 @@ export async function purchaseOrdersRoutes(app: FastifyInstance) {
       let failureReason: string | null = null;
 
       if (parsed.data.method === "email") {
-        status = "not_configured";
-        failureReason = "Email sending is not configured on this deployment.";
+        if (!recipientEmail) {
+          status = "failed";
+          failureReason = "Supplier email is missing.";
+        } else {
+          const pdfBuffer = await generatePurchaseOrderPdf({
+            business: documentBusiness,
+            sender: documentSender,
+            order: detail.order,
+            items: detail.items,
+          });
+
+          const emailResult = await sendPurchaseOrderEmail({
+            business: documentBusiness,
+            sender: documentSender,
+            order: detail.order,
+            items: detail.items,
+            to: recipientEmail,
+            subject,
+            message,
+            pdfBuffer,
+          });
+
+          if (!emailResult.ok) {
+            status =
+              emailResult.reason ===
+              "Email sending is not configured on this deployment."
+                ? "not_configured"
+                : "failed";
+            failureReason = emailResult.reason;
+          }
+        }
       }
 
       const eventResult = await query<DbPurchaseOrderSendEvent>(

@@ -115,6 +115,10 @@ export function buildPurchaseOrderPlainMessage(input: {
       lines.push(`   Expected unit cost: ${money(item.expectedUnitCostCents)}`);
     }
 
+    if (item.expectedLineTotalCents !== null) {
+      lines.push(`   Line total: ${money(item.expectedLineTotalCents)}`);
+    }
+
     if (item.note) {
       lines.push(`   Note: ${item.note}`);
     }
@@ -131,7 +135,7 @@ export function buildPurchaseOrderPlainMessage(input: {
     );
   }
 
-  lines.push("", "Please confirm availability and delivery time.");
+  lines.push("", "Please confirm availability, price, and delivery time.");
 
   return lines.join("\n");
 }
