@@ -44,6 +44,7 @@ import type { AppAccess } from "../app-permissions";
 import { StatusBadge } from "../../status-badge";
 import { SuppliersPanel } from "./suppliers-panel";
 import { StockTransfersPanel } from "./stock-transfers-panel";
+import { PurchaseOrdersPanel } from "./purchase-orders-panel";
 
 const STOCK_PAGE_SIZE = 6;
 const CATALOG_PAGE_SIZE = 6;
@@ -137,7 +138,13 @@ type DrawerMode =
   | "edit"
   | null;
 
-type ActiveTab = "stock" | "catalog" | "suppliers" | "transfers" | "history";
+type ActiveTab =
+  | "stock"
+  | "catalog"
+  | "suppliers"
+  | "transfers"
+  | "purchase-orders"
+  | "history";
 
 type StockViewProps = {
   context: CurrentUserResponse;
@@ -323,6 +330,34 @@ export function StockView({ context, appAccess }: StockViewProps) {
     appAccess.usesStock &&
     context.membership.permissions.includes("STOCK_TRANSFER_CREATE");
 
+  const canViewPurchaseOrders =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("PURCHASE_ORDER_VIEW");
+
+  const canCreatePurchaseOrder =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("PURCHASE_ORDER_CREATE");
+
+  const canUpdatePurchaseOrder =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("PURCHASE_ORDER_UPDATE");
+
+  const canMarkPurchaseOrderOrdered =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("PURCHASE_ORDER_MARK_ORDERED");
+
+  const canCancelPurchaseOrder =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("PURCHASE_ORDER_CANCEL");
+
+  const canReceivePurchaseOrder =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("PURCHASE_ORDER_RECEIVE");
+
+  const canSendPurchaseOrder =
+    appAccess.usesStock &&
+    context.membership.permissions.includes("PURCHASE_ORDER_SEND");
+
   useEffect(() => {
     if (!appAccess.usesStock && activeTab !== "catalog") {
       setActiveTab("catalog");
@@ -335,6 +370,11 @@ export function StockView({ context, appAccess }: StockViewProps) {
     }
 
     if (activeTab === "transfers" && !canViewTransfers) {
+      setActiveTab(appAccess.usesStock ? "stock" : "catalog");
+      return;
+    }
+
+    if (activeTab === "purchase-orders" && !canViewPurchaseOrders) {
       setActiveTab(appAccess.usesStock ? "stock" : "catalog");
     }
   }, [activeTab, appAccess.usesStock, canViewSuppliers, canViewTransfers]);
@@ -975,6 +1015,14 @@ export function StockView({ context, appAccess }: StockViewProps) {
               />
             ) : null}
 
+            {canViewPurchaseOrders ? (
+              <TabButton
+                active={activeTab === "purchase-orders"}
+                label="Purchase orders"
+                onClick={() => setActiveTab("purchase-orders")}
+              />
+            ) : null}
+
             {appAccess.usesStock ? (
               <TabButton
                 active={activeTab === "history"}
@@ -1116,6 +1164,21 @@ export function StockView({ context, appAccess }: StockViewProps) {
           refreshKey={inventoryPanelRefreshKey}
           branches={context.branches}
           canCreateTransfer={canCreateTransfer}
+        />
+      ) : null}
+
+      {activeTab === "purchase-orders" && canViewPurchaseOrders ? (
+        <PurchaseOrdersPanel
+          search={search}
+          refreshKey={inventoryPanelRefreshKey}
+          branches={context.branches}
+          products={items}
+          canCreatePurchaseOrder={canCreatePurchaseOrder}
+          canUpdatePurchaseOrder={canUpdatePurchaseOrder}
+          canMarkPurchaseOrderOrdered={canMarkPurchaseOrderOrdered}
+          canCancelPurchaseOrder={canCancelPurchaseOrder}
+          canReceivePurchaseOrder={canReceivePurchaseOrder}
+          canSendPurchaseOrder={canSendPurchaseOrder}
         />
       ) : null}
 
