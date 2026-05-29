@@ -8,6 +8,7 @@ type ApiOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   auth?: boolean;
+  responseType?: "json" | "blob";
 };
 
 function buildQuery(
@@ -53,21 +54,27 @@ export async function apiRequest<T>(
 
   const response = await fetch(`${apiBaseUrl}${path}`, requestInit);
 
-  const data = (await response.json().catch(() => null)) as {
-    message?: string;
-  } | null;
-
   if (!response.ok) {
     if (response.status === 401) {
       clearAuthToken();
     }
 
+    const errorData = (await response.json().catch(() => null)) as {
+      message?: string;
+    } | null;
+
     throw new Error(
-      data?.message || `Request failed with status ${response.status}`,
+      errorData?.message || `Request failed with status ${response.status}`,
     );
   }
 
-  return data as T;
+  if (options.responseType === "blob") {
+    return (await response.blob()) as T;
+  }
+
+  const data = (await response.json().catch(() => null)) as T;
+
+  return data;
 }
 
 export type RegisterOwnerPayload = {

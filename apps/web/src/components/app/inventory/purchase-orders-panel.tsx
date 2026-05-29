@@ -17,6 +17,7 @@ import {
 import {
   cancelPurchaseOrder,
   createPurchaseOrder,
+  downloadPurchaseOrderPdf,
   getPurchaseOrder,
   listPurchaseOrders,
   listSuppliers,
@@ -587,6 +588,26 @@ export function PurchaseOrdersPanel({
     setSuccess("");
 
     try {
+      if (method === "pdf_download") {
+        const pdfBlob = await downloadPurchaseOrderPdf(
+          selectedOrder.purchaseOrder.id,
+        );
+
+        const downloadUrl = window.URL.createObjectURL(pdfBlob);
+        const link = document.createElement("a");
+
+        link.href = downloadUrl;
+        link.download = `${selectedOrder.purchaseOrder.orderNumber}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
+        setSuccess("Purchase order PDF downloaded.");
+        await loadSelectedOrder(selectedOrder.purchaseOrder.id);
+        return;
+      }
+
       const payload: Parameters<typeof sendPurchaseOrder>[1] = {
         method,
       };
@@ -1204,8 +1225,8 @@ function PurchaseOrderCommandCenter({
                 <ActionButton
                   label={
                     sendingMethod === "pdf_download"
-                      ? "Recording..."
-                      : "PDF event"
+                      ? "Downloading..."
+                      : "Download PDF"
                   }
                   loading={sendingMethod === "pdf_download"}
                   onClick={() => onSend("pdf_download")}
@@ -1586,13 +1607,13 @@ function SendShareCard({
 
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <SendButton
-          label="PDF event"
+          label="Download PDF"
           icon={FileText}
           isLoading={sendingMethod === "pdf_download"}
           onClick={() => onSend("pdf_download")}
         />
         <SendButton
-          label="Email event"
+          label="Send Email"
           icon={Mail}
           isLoading={sendingMethod === "email"}
           onClick={() => onSend("email")}

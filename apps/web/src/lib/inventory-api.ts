@@ -414,3 +414,10 @@ export function sendPurchaseOrder(
     body: payload,
   });
 }
+
+export function downloadPurchaseOrderPdf(purchaseOrderId: string) {
+  return apiRequest<Blob>(`/purchase-orders/${purchaseOrderId}/pdf`, {
+    auth: true,
+    responseType: "blob",
+  });
+}
