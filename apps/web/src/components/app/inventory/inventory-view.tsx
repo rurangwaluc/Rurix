@@ -2802,11 +2802,7 @@ function ProductFormView({
         label="Description"
         value={form.description}
         onChange={(value) => onChange({ ...form, description: value })}
-      />
-      <TextAreaField
-        label="Note"
-        value={form.note}
-        onChange={(value) => onChange({ ...form, note: value })}
+        placeholder="Example: Laptop bag, black color, fits 15-inch laptops."
       />
       <SubmitButton
         label="Create product"
@@ -2879,11 +2875,7 @@ function ServiceFormView({
         label="Description"
         value={form.description}
         onChange={(value) => onChange({ ...form, description: value })}
-      />
-      <TextAreaField
-        label="Note"
-        value={form.note}
-        onChange={(value) => onChange({ ...form, note: value })}
+        placeholder="Example: Screen replacement, diagnosis, or installation service."
       />
       <SubmitButton
         label="Create service"

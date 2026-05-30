@@ -1007,14 +1007,6 @@ function PurchaseOrderFormCard({
                 />
               </div>
 
-              <div className="mt-4">
-                <TextAreaField
-                  label="Line note"
-                  value={item.note}
-                  onChange={(value) => updateLine(item.tempId, { note: value })}
-                  placeholder="Specific product note"
-                />
-              </div>
             </div>
           ))}
         </div>
@@ -1812,31 +1804,12 @@ function ReceiveStockCard({
                 </p>
               ) : null}
 
-              <div className="mt-3">
-                <TextAreaField
-                  label="Receive note"
-                  value={row.note}
-                  onChange={(value) =>
-                    onReceiveFormChange({
-                      ...receiveForm,
-                      items: {
-                        ...receiveForm.items,
-                        [item.id]: {
-                          ...row,
-                          note: value,
-                        },
-                      },
-                    })
-                  }
-                  placeholder="Example: Boxes checked and accepted."
-                />
-              </div>
             </div>
           );
         })}
 
         <TextAreaField
-          label="Delivery note or receiving comment"
+          label="Delivery note"
           value={receiveForm.note}
           onChange={(value) =>
             onReceiveFormChange({ ...receiveForm, note: value })
