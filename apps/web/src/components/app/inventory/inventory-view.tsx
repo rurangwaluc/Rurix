@@ -982,9 +982,9 @@ export function StockView({ context, appAccess }: StockViewProps) {
       {error ? <AlertCard tone="danger" message={error} /> : null}
       {success ? <AlertCard tone="success" message={success} /> : null}
 
-      <section className="sticky top-0 z-20 -mx-4 border-y border-border bg-background/95 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:rounded-section lg:border lg:bg-surface lg:p-4 lg:shadow-card">
+      <section className="rounded-section border border-border bg-surface p-3 shadow-card sm:p-4">
         <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 gap-2 min-[520px]:grid-cols-3 lg:grid-cols-6">
             {appAccess.usesStock ? (
               <TabButton
                 active={activeTab === "stock"}
@@ -1036,8 +1036,8 @@ export function StockView({ context, appAccess }: StockViewProps) {
             className={[
               "grid gap-2",
               appAccess.usesStock
-                ? "md:grid-cols-[220px_1fr_auto]"
-                : "md:grid-cols-[1fr_auto]",
+                ? "lg:grid-cols-[220px_minmax(0,1fr)_auto]"
+                : "lg:grid-cols-[minmax(0,1fr)_auto]",
             ].join(" ")}
           >
             {appAccess.usesStock ? (
@@ -1544,7 +1544,7 @@ function CatalogSection({
           </div>
 
           {appAccess.businessType === "product_and_service" ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
               {[
                 ["ALL", "All"],
                 ["PRODUCT", "Products"],
@@ -1557,7 +1557,7 @@ function CatalogSection({
                     onChangeCatalogFilter(value as "ALL" | CatalogItemKind)
                   }
                   className={[
-                    "rounded-2xl px-3 py-2 text-xs font-black transition",
+                    "inline-flex min-h-10 w-full items-center justify-center rounded-2xl px-3 py-2 text-center text-xs font-black transition",
                     catalogFilter === value
                       ? "bg-primary text-primary-foreground"
                       : "border border-border bg-background text-muted-foreground hover:text-foreground",
@@ -1711,10 +1711,10 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={[
-        "rounded-2xl px-4 py-2.5 text-sm font-black transition",
+        "inline-flex min-h-11 w-full items-center justify-center rounded-2xl border px-3 py-2.5 text-center text-sm font-black transition",
         active
-          ? "bg-primary text-primary-foreground shadow-soft"
-          : "border border-border bg-background text-muted-foreground hover:text-foreground",
+          ? "border-primary bg-primary text-primary-foreground shadow-soft"
+          : "border-border bg-background text-muted-foreground hover:text-foreground",
       ].join(" ")}
     >
       {label}
@@ -1724,11 +1724,13 @@ function TabButton({
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-0 rounded-3xl border border-border bg-background/80 p-4 shadow-soft">
-      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+    <div className="min-w-0 rounded-3xl border border-border bg-background/80 p-3 shadow-soft sm:p-4">
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-black">{value.toLocaleString()}</p>
+      <p className="mt-2 truncate text-xl font-black sm:text-2xl">
+        {value.toLocaleString()}
+      </p>
     </div>
   );
 }
@@ -2313,11 +2315,11 @@ function StockAlertFormView({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-background p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+    <div className="min-w-0 rounded-2xl border border-border bg-background p-3">
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-1 break-words text-sm font-black">{value}</p>
+      <p className="mt-1 break-words text-sm font-black leading-5">{value}</p>
     </div>
   );
 }
@@ -2410,7 +2412,7 @@ function MovementList({
                   ) : null}
                 </div>
 
-                <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
+                <div className="grid min-w-0 grid-cols-3 gap-1.5 rounded-3xl border border-border bg-surface p-1.5 text-center sm:gap-2 sm:p-2">
                   <MovementMiniStat
                     label="Available"
                     before={movement.quantityAvailableBefore}
@@ -2462,64 +2464,118 @@ function MobileActionBar({
   onReceiveStock: () => void;
   onAdjustStock: () => void;
 }) {
-  if (!canManageCatalog && !canMoveStock) {
+  const actions: Array<{
+    label: string;
+    icon: LucideIcon;
+    tone: "primary" | "warning" | "surface";
+    onClick: () => void;
+  }> = [];
+
+  if (canMoveStock && appAccess.usesStock) {
+    actions.push(
+      {
+        label: "Receive stock",
+        icon: PackagePlus,
+        tone: "primary",
+        onClick: onReceiveStock,
+      },
+      {
+        label: "Report issue",
+        icon: ShieldAlert,
+        tone: "warning",
+        onClick: onAdjustStock,
+      },
+    );
+  }
+
+  if (canManageCatalog && appAccess.sellsProducts) {
+    actions.push({
+      label: "Add product",
+      icon: Boxes,
+      tone: "surface",
+      onClick: onAddProduct,
+    });
+  }
+
+  if (canManageCatalog && appAccess.sellsServices) {
+    actions.push({
+      label: "Add service",
+      icon: Sparkles,
+      tone: "surface",
+      onClick: onAddService,
+    });
+  }
+
+  if (!actions.length) {
     return null;
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 shadow-2xl backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-xl gap-2">
-        {canMoveStock && appAccess.usesStock ? (
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={onReceiveStock}
-              className="rounded-2xl bg-primary px-3 py-3 text-xs font-black text-primary-foreground shadow-soft"
-            >
-              Receive stock
-            </button>
-            <button
-              type="button"
-              onClick={onAdjustStock}
-              className="rounded-2xl border border-warning/30 bg-warning/10 px-3 py-3 text-xs font-black text-warning"
-            >
-              Report issue
-            </button>
-          </div>
-        ) : null}
-
-        {canManageCatalog ? (
-          <div
-            className={[
-              "grid gap-2",
-              appAccess.sellsProducts && appAccess.sellsServices
-                ? "grid-cols-2"
-                : "grid-cols-1",
-            ].join(" ")}
-          >
-            {appAccess.sellsProducts ? (
-              <button
-                type="button"
-                onClick={onAddProduct}
-                className="rounded-2xl border border-border bg-surface px-3 py-3 text-xs font-black text-foreground"
-              >
-                Add product
-              </button>
-            ) : null}
-
-            {appAccess.sellsServices ? (
-              <button
-                type="button"
-                onClick={onAddService}
-                className="rounded-2xl border border-border bg-surface px-3 py-3 text-xs font-black text-foreground"
-              >
-                Add service
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-3 py-2.5 shadow-2xl backdrop-blur-xl lg:hidden">
+      <div
+        className={[
+          "mx-auto grid max-w-xl gap-2",
+          actions.length === 1
+            ? "grid-cols-1"
+            : actions.length === 2
+              ? "grid-cols-2"
+              : actions.length === 3
+                ? "grid-cols-3"
+                : "grid-cols-2 min-[420px]:grid-cols-4",
+        ].join(" ")}
+      >
+        {actions.map((action) => (
+          <MobileActionButton
+            key={action.label}
+            label={action.label}
+            icon={action.icon}
+            tone={action.tone}
+            onClick={action.onClick}
+          />
+        ))}
       </div>
     </div>
+  );
+}
+
+function MobileActionButton({
+  label,
+  icon: Icon,
+  tone,
+  onClick,
+}: {
+  label: string;
+  icon: LucideIcon;
+  tone: "primary" | "warning" | "surface";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center text-[10px] font-black leading-tight transition active:scale-[0.98]",
+        tone === "primary"
+          ? "border-primary bg-primary text-primary-foreground shadow-soft"
+          : tone === "warning"
+            ? "border-warning/30 bg-warning/10 text-warning"
+            : "border-border bg-surface text-foreground",
+      ].join(" ")}
+    >
+      <span
+        className={[
+          "flex h-7 w-7 items-center justify-center rounded-xl",
+          tone === "primary"
+            ? "bg-primary-foreground/15"
+            : tone === "warning"
+              ? "bg-warning/15"
+              : "bg-primary/10 text-primary",
+        ].join(" ")}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="line-clamp-2 max-w-full break-words">{label}</span>
+    </button>
   );
 }
 
@@ -3087,11 +3143,11 @@ function MovementMiniStat({
   after: number;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+    <div className="min-w-0 rounded-2xl border border-border bg-background px-2 py-3">
+      <p className="truncate text-[8px] font-black uppercase tracking-[0.1em] text-muted-foreground min-[380px]:text-[9px] sm:text-[10px] sm:tracking-[0.14em]">
         {label}
       </p>
-      <p className="mt-2 text-xs font-black sm:text-sm">
+      <p className="mt-2 truncate text-xs font-black leading-5 min-[380px]:text-sm">
         {before.toLocaleString()} → {after.toLocaleString()}
       </p>
     </div>
@@ -3100,11 +3156,13 @@ function MovementMiniStat({
 
 function MiniMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-border bg-background p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+    <div className="min-w-0 rounded-2xl border border-border bg-background p-3">
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-2 text-lg font-black">{value.toLocaleString()}</p>
+      <p className="mt-2 truncate text-base font-black sm:text-lg">
+        {value.toLocaleString()}
+      </p>
     </div>
   );
 }

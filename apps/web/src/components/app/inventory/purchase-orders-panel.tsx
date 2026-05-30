@@ -560,7 +560,7 @@ export function PurchaseOrdersPanel({
       }
 
       await receivePurchaseOrder(selectedOrder.purchaseOrder.id, payload);
-      setSuccess("Purchase order stock received.");
+      setSuccess("Received stock recorded and inventory updated.");
       await reloadPanel(selectedOrder.purchaseOrder.id);
     } catch (caughtError) {
       setError(
@@ -760,7 +760,7 @@ export function PurchaseOrdersPanel({
       ) : null}
 
       {!isLoading && orders.length > 0 ? (
-        <section className="grid gap-4 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.35fr)]">
+        <section className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(340px,0.82fr)_minmax(0,1.45fr)]">
           <section className="space-y-3">
             <div className="rounded-3xl border border-border bg-surface p-4 shadow-soft">
               <div className="flex flex-wrap items-end justify-between gap-3">
@@ -776,7 +776,7 @@ export function PurchaseOrdersPanel({
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+            <div className="grid min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-1">
               {orders.map((order) => (
                 <PurchaseOrderCard
                   key={order.id}
@@ -1067,7 +1067,7 @@ function PurchaseOrderCard({
       onClick={onOpen}
       disabled={isOpening}
       className={[
-        "rounded-[1.75rem] border bg-surface p-4 text-left shadow-card transition hover:border-primary/50 hover:bg-primary/5 disabled:cursor-wait disabled:opacity-70",
+        "min-w-0 rounded-[1.5rem] border bg-surface p-3 text-left shadow-card transition hover:border-primary/50 hover:bg-primary/5 disabled:cursor-wait disabled:opacity-70 sm:rounded-[1.75rem] sm:p-4",
         isSelected ? "border-primary ring-2 ring-primary/15" : "border-border",
       ].join(" ")}
     >
@@ -1076,7 +1076,7 @@ function PurchaseOrderCard({
         <StatusBadge variant="primary">{order.orderNumber}</StatusBadge>
       </div>
 
-      <h3 className="mt-4 break-words text-lg font-black">
+      <h3 className="mt-3 break-words text-base font-black sm:mt-4 sm:text-lg">
         {order.supplierName}
       </h3>
 
@@ -1154,6 +1154,20 @@ function PurchaseOrderCommandCenter({
   onSendFormChange: (value: SendForm) => void;
   onCancelReasonChange: (value: string) => void;
 }) {
+  type CommandTab =
+    | "overview"
+    | "products"
+    | "receive"
+    | "share"
+    | "activity"
+    | "danger";
+
+  const [activeTab, setActiveTab] = useState<CommandTab>("overview");
+
+  useEffect(() => {
+    setActiveTab("overview");
+  }, [selectedOrder?.purchaseOrder.id]);
+
   if (!selectedOrder) {
     return (
       <section className="min-h-[520px] rounded-section border border-dashed border-border bg-surface p-8 text-center shadow-card">
@@ -1175,13 +1189,81 @@ function PurchaseOrderCommandCenter({
     ordered: totals.ordered,
     received: totals.received,
   });
+
   const canReceiveNow =
-    order.status === "ordered" || order.status === "partly_received";
+    order.status === "ordered" ||
+    order.status === "partly_received" ||
+    order.status === "fully_received";
+
   const canChangeDraft = order.status === "draft";
   const canCancelNow = order.status === "draft" || order.status === "ordered";
 
+  const tabs: Array<{
+    key: CommandTab;
+    label: string;
+    helper: string;
+  }> = [
+    {
+      key: "overview",
+      label: "Overview",
+      helper: "Main order summary",
+    },
+    {
+      key: "products",
+      label: "Products",
+      helper: `${selectedOrder.items.length.toLocaleString()} product${
+        selectedOrder.items.length === 1 ? "" : "s"
+      }`,
+    },
+    ...(canReceivePurchaseOrder && canReceiveNow
+      ? [
+          {
+            key: "receive" as const,
+            label: "Receive stock",
+            helper:
+              totals.remaining > 0
+                ? `${totals.remaining.toLocaleString()} still expected`
+                : "Fully received",
+          },
+        ]
+      : []),
+    ...(canSendPurchaseOrder
+      ? [
+          {
+            key: "share" as const,
+            label: "Share order",
+            helper: "PDF, email, WhatsApp",
+          },
+        ]
+      : []),
+    {
+      key: "activity",
+      label: "Activity",
+      helper: `${(
+        selectedOrder.receipts.length + selectedOrder.sendEvents.length
+      ).toLocaleString()} record${
+        selectedOrder.receipts.length + selectedOrder.sendEvents.length === 1
+          ? ""
+          : "s"
+      }`,
+    },
+    ...(canCancelNow && canCancelPurchaseOrder
+      ? [
+          {
+            key: "danger" as const,
+            label: "Danger zone",
+            helper: "Cancel this order",
+          },
+        ]
+      : []),
+  ];
+
+  const currentTab = tabs.some((tab) => tab.key === activeTab)
+    ? activeTab
+    : "overview";
+
   return (
-    <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+    <aside className="min-w-0 space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
       <section className="overflow-hidden rounded-section border border-border bg-surface shadow-card">
         <div className="relative p-4 sm:p-5">
           <div className="absolute right-0 top-0 h-28 w-28 rounded-full bg-primary/10 blur-3xl" />
@@ -1261,92 +1343,206 @@ function PurchaseOrderCommandCenter({
         </div>
       </section>
 
-      <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-        <h4 className="text-lg font-black">Supplier details</h4>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <DetailRow
-            label="Contact person"
-            value={order.supplierContactPerson || "Not added"}
-          />
-          <DetailRow label="Phone" value={order.supplierPhone || "Not added"} />
-          <DetailRow label="Email" value={order.supplierEmail || "Not added"} />
-          <DetailRow
-            label="Expected delivery"
-            value={
-              order.expectedDeliveryDate
-                ? order.expectedDeliveryDate.slice(0, 10)
-                : "Not set"
-            }
-          />
+      <section className="rounded-section border border-border bg-surface p-2 shadow-card sm:p-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {tabs.map((tab) => {
+            const isActive = tab.key === currentTab;
+
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={[
+                  "min-w-0 rounded-2xl border px-3 py-2.5 text-left transition sm:px-4 sm:py-3",
+                  isActive
+                    ? "border-primary bg-primary text-primary-foreground shadow-soft"
+                    : "border-border bg-background text-foreground hover:border-primary/50 hover:bg-primary/5",
+                ].join(" ")}
+              >
+                <span className="block text-sm font-black">{tab.label}</span>
+                <span
+                  className={[
+                    "mt-1 hidden text-[11px] font-bold sm:block",
+                    isActive
+                      ? "text-primary-foreground/75"
+                      : "text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {tab.helper}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </section>
 
-      <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-        <h4 className="text-lg font-black">Product progress</h4>
+      {currentTab === "overview" ? (
+        <section className="space-y-4">
+          <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+            <h4 className="text-lg font-black">Supplier details</h4>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <DetailRow
+                label="Contact person"
+                value={order.supplierContactPerson || "Not added"}
+              />
+              <DetailRow
+                label="Phone"
+                value={order.supplierPhone || "Not added"}
+              />
+              <DetailRow
+                label="Email"
+                value={order.supplierEmail || "Not added"}
+              />
+              <DetailRow
+                label="Expected delivery"
+                value={
+                  order.expectedDeliveryDate
+                    ? order.expectedDeliveryDate.slice(0, 10)
+                    : "Not set"
+                }
+              />
+            </div>
+          </section>
 
-        <div className="mt-4 grid gap-3">
-          {selectedOrder.items.map((item) => (
-            <ProductProgressCard key={item.id} item={item} />
-          ))}
-        </div>
-      </section>
+          <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+            <h4 className="text-lg font-black">Order control</h4>
+            <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+              Use the tabs above to review products, receive delivered stock,
+              share the supplier order, or review activity.
+            </p>
 
-      {canReceiveNow && canReceivePurchaseOrder ? (
-        <ReceiveStockCard
-          selectedOrder={selectedOrder}
-          branches={branches}
-          receiveForm={receiveForm}
-          isReceiving={isReceiving}
-          onReceive={onReceive}
-          onReceiveFormChange={onReceiveFormChange}
-        />
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <DetailRow
+                label="Order value"
+                value={money(
+                  selectedOrder.items.reduce(
+                    (sum, item) => sum + (item.expectedLineTotalCents || 0),
+                    0,
+                  ),
+                )}
+              />
+              <DetailRow
+                label="Delivery location"
+                value={order.deliveryBranchName || "Not set"}
+              />
+              <DetailRow label="Reference" value={order.orderNumber} />
+            </div>
+          </section>
+        </section>
       ) : null}
 
-      {canSendPurchaseOrder ? (
-        <SendShareCard
-          sendForm={sendForm}
-          sendingMethod={sendingMethod}
-          onSend={onSend}
-          onSendFormChange={onSendFormChange}
-        />
-      ) : null}
-
-      <HistorySection
-        receipts={selectedOrder.receipts}
-        receiptItems={selectedOrder.receiptItems}
-        sendEvents={selectedOrder.sendEvents}
-      />
-
-      {canCancelNow && canCancelPurchaseOrder ? (
-        <section className="rounded-section border border-warning/25 bg-warning/10 p-4 shadow-card sm:p-5">
-          <h4 className="text-lg font-black text-warning">
-            Cancel purchase order
-          </h4>
-          <p className="mt-1 text-sm font-semibold leading-6 text-warning">
-            Use this only when the supplier order should no longer be active.
-          </p>
-
-          <div className="mt-4">
-            <TextAreaField
-              label="Cancellation reason"
-              value={cancelReason}
-              onChange={onCancelReasonChange}
-              required
-            />
+      {currentTab === "products" ? (
+        <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-black">Product progress</h4>
+              <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+                Review what was ordered, what arrived, and what is still
+                expected.
+              </p>
+            </div>
+            <StatusBadge variant="primary">
+              {selectedOrder.items.length.toLocaleString()} product
+              {selectedOrder.items.length === 1 ? "" : "s"}
+            </StatusBadge>
           </div>
 
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isCancelling}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-warning px-4 py-3 text-sm font-black text-white shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isCancelling ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            ) : null}
-            {isCancelling ? "Cancelling..." : "Cancel order"}
-          </button>
+          <div className="mt-4 grid gap-3">
+            {selectedOrder.items.map((item) => (
+              <ProductProgressCard key={item.id} item={item} />
+            ))}
+          </div>
         </section>
+      ) : null}
+
+      {currentTab === "receive" ? (
+        canReceivePurchaseOrder && canReceiveNow ? (
+          <ReceiveStockCard
+            selectedOrder={selectedOrder}
+            branches={branches}
+            receiveForm={receiveForm}
+            isReceiving={isReceiving}
+            onReceive={onReceive}
+            onReceiveFormChange={onReceiveFormChange}
+          />
+        ) : (
+          <section className="rounded-section border border-border bg-surface p-5 text-center shadow-card">
+            <h4 className="text-lg font-black">Receiving is not available</h4>
+            <p className="mt-2 text-sm font-semibold text-muted-foreground">
+              This purchase order cannot receive stock in its current state.
+            </p>
+          </section>
+        )
+      ) : null}
+
+      {currentTab === "share" ? (
+        canSendPurchaseOrder ? (
+          <SendShareCard
+            sendForm={sendForm}
+            sendingMethod={sendingMethod}
+            onSend={onSend}
+            onSendFormChange={onSendFormChange}
+          />
+        ) : (
+          <section className="rounded-section border border-border bg-surface p-5 text-center shadow-card">
+            <h4 className="text-lg font-black">Sharing is not available</h4>
+            <p className="mt-2 text-sm font-semibold text-muted-foreground">
+              You do not have access to share purchase orders.
+            </p>
+          </section>
+        )
+      ) : null}
+
+      {currentTab === "activity" ? (
+        <HistorySection
+          receipts={selectedOrder.receipts}
+          receiptItems={selectedOrder.receiptItems}
+          sendEvents={selectedOrder.sendEvents}
+        />
+      ) : null}
+
+      {currentTab === "danger" ? (
+        canCancelNow && canCancelPurchaseOrder ? (
+          <section className="rounded-section border border-warning/25 bg-warning/10 p-4 shadow-card sm:p-5">
+            <h4 className="text-lg font-black text-warning">
+              Cancel purchase order
+            </h4>
+            <p className="mt-1 text-sm font-semibold leading-6 text-warning">
+              Use this only when the supplier order should no longer be active.
+            </p>
+
+            <div className="mt-4">
+              <TextAreaField
+                label="Cancellation reason"
+                value={cancelReason}
+                onChange={onCancelReasonChange}
+                required
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isCancelling}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-warning px-4 py-3 text-sm font-black text-white shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isCancelling ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : null}
+              {isCancelling ? "Cancelling..." : "Cancel order"}
+            </button>
+          </section>
+        ) : (
+          <section className="rounded-section border border-border bg-surface p-5 text-center shadow-card">
+            <h4 className="text-lg font-black">
+              No dangerous action available
+            </h4>
+            <p className="mt-2 text-sm font-semibold text-muted-foreground">
+              This purchase order cannot be cancelled in its current state.
+            </p>
+          </section>
+        )
       ) : null}
     </aside>
   );
@@ -1431,6 +1627,43 @@ function ReceiveStockCard({
     (item) => item.quantityRemaining > 0,
   );
 
+  const totals = getSelectedOrderTotals(selectedOrder.items);
+  const receivingNow = openItems.reduce((sum, item) => {
+    const row = receiveForm.items[item.id];
+    return sum + toInt(row?.quantityReceived || "");
+  }, 0);
+
+  const receivingLocation =
+    branches.find((branch) => branch.id === receiveForm.receivedBranchId)
+      ?.name || "Choose receiving location";
+
+  const hasQuantityWarning = openItems.some((item) => {
+    const row = receiveForm.items[item.id];
+    const quantityReceived = toInt(row?.quantityReceived || "");
+
+    return quantityReceived > item.quantityRemaining;
+  });
+
+  if (!openItems.length) {
+    return (
+      <section className="rounded-section border border-success/25 bg-success/10 p-4 shadow-card sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <StatusBadge variant="success">Fully received</StatusBadge>
+            <h4 className="mt-3 text-lg font-black">
+              All stock has been received
+            </h4>
+            <p className="mt-1 text-sm font-semibold leading-6 text-success">
+              This purchase order has no remaining products waiting to be
+              received.
+            </p>
+          </div>
+          <PackageCheck className="h-7 w-7 text-success" />
+        </div>
+      </section>
+    );
+  }
+
   return (
     <form
       onSubmit={onReceive}
@@ -1441,28 +1674,49 @@ function ReceiveStockCard({
           <StatusBadge variant="success">Receiving</StatusBadge>
           <h4 className="mt-3 text-lg font-black">Receive stock</h4>
           <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-            Enter only the quantities that arrived in this delivery.
+            Record only the products and quantities that physically arrived.
+            Inventory will increase after confirmation.
           </p>
         </div>
         <PackageCheck className="h-6 w-6 text-primary" />
       </div>
 
-      <div className="mt-4 grid gap-4">
-        <SelectField
-          label="Receiving location"
-          value={receiveForm.receivedBranchId}
-          onChange={(value) =>
-            onReceiveFormChange({
-              ...receiveForm,
-              receivedBranchId: value,
-            })
-          }
-          options={branches.map((branch) => ({
-            value: branch.id,
-            label: branch.name,
-          }))}
-        />
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <MiniMetric label="Ordered" value={totals.ordered} />
+        <MiniMetric label="Already received" value={totals.received} />
+        <MiniMetric label="Still expected" value={totals.remaining} />
+        <MiniMetric label="Receiving now" value={receivingNow} />
+      </div>
 
+      <div className="mt-4 rounded-3xl border border-border bg-background p-4">
+        <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr] lg:items-end">
+          <SelectField
+            label="Receiving location"
+            value={receiveForm.receivedBranchId}
+            onChange={(value) =>
+              onReceiveFormChange({
+                ...receiveForm,
+                receivedBranchId: value,
+              })
+            }
+            options={branches.map((branch) => ({
+              value: branch.id,
+              label: branch.name,
+            }))}
+          />
+
+          <DetailRow label="Stock will be added to" value={receivingLocation} />
+        </div>
+      </div>
+
+      {hasQuantityWarning ? (
+        <div className="mt-4 rounded-3xl border border-danger/30 bg-danger/10 p-4 text-sm font-bold leading-6 text-danger">
+          One or more received quantities are higher than the quantity still
+          expected. Adjust the quantity before confirming.
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-4">
         {openItems.map((item) => {
           const row = receiveForm.items[item.id] || {
             quantityReceived: "",
@@ -1470,23 +1724,50 @@ function ReceiveStockCard({
             note: "",
           };
 
+          const quantityReceived = toInt(row.quantityReceived);
+          const isOverReceiving = quantityReceived > item.quantityRemaining;
+
           return (
             <div
               key={item.id}
-              className="rounded-3xl border border-border bg-background p-4"
+              className={[
+                "rounded-3xl border bg-background p-4",
+                isOverReceiving ? "border-danger/40" : "border-border",
+              ].join(" ")}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h5 className="break-words text-sm font-black">
-                  {item.itemName}
-                </h5>
-                <StatusBadge variant="primary">
-                  {item.quantityRemaining.toLocaleString()} left
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h5 className="break-words text-base font-black">
+                    {item.itemName}
+                  </h5>
+
+                  {item.itemSku ? (
+                    <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                      {item.itemSku}
+                    </p>
+                  ) : null}
+                </div>
+
+                <StatusBadge variant={isOverReceiving ? "warning" : "primary"}>
+                  {item.quantityRemaining.toLocaleString()} still expected
                 </StatusBadge>
               </div>
 
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <MiniMetric label="Ordered" value={item.quantityOrdered} />
+                <MiniMetric
+                  label="Already received"
+                  value={item.quantityReceived}
+                />
+                <MiniMetric
+                  label="Still expected"
+                  value={item.quantityRemaining}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <InputField
-                  label="Quantity received"
+                  label="Quantity received now"
                   value={row.quantityReceived}
                   onChange={(value) =>
                     onReceiveFormChange({
@@ -1503,6 +1784,7 @@ function ReceiveStockCard({
                   type="number"
                   min="0"
                 />
+
                 <InputField
                   label="Actual unit cost"
                   value={row.actualUnitCost}
@@ -1523,6 +1805,13 @@ function ReceiveStockCard({
                 />
               </div>
 
+              {isOverReceiving ? (
+                <p className="mt-3 rounded-2xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-bold leading-5 text-danger">
+                  You entered more than the quantity still expected for this
+                  product.
+                </p>
+              ) : null}
+
               <div className="mt-3">
                 <TextAreaField
                   label="Receive note"
@@ -1539,6 +1828,7 @@ function ReceiveStockCard({
                       },
                     })
                   }
+                  placeholder="Example: Boxes checked and accepted."
                 />
               </div>
             </div>
@@ -1546,23 +1836,25 @@ function ReceiveStockCard({
         })}
 
         <TextAreaField
-          label="Delivery note"
+          label="Delivery note or receiving comment"
           value={receiveForm.note}
           onChange={(value) =>
             onReceiveFormChange({ ...receiveForm, note: value })
           }
-          placeholder="Delivery condition or receiving note"
+          placeholder="Example: Supplier delivered 2 racks today. Boxes checked and accepted."
         />
 
         <button
           type="submit"
-          disabled={isReceiving}
+          disabled={isReceiving || hasQuantityWarning}
           className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isReceiving ? (
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
           ) : null}
-          {isReceiving ? "Receiving stock..." : "Receive stock"}
+          {isReceiving
+            ? "Recording received stock..."
+            : "Confirm received stock"}
         </button>
       </div>
     </form>
@@ -1662,74 +1954,195 @@ function HistorySection({
   receiptItems: PurchaseOrderReceiptItem[];
   sendEvents: PurchaseOrderSendEvent[];
 }) {
+  type ActivityFilter = "all" | "receipts" | "sharing";
+
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
+  const [showAllActivity, setShowAllActivity] = useState(false);
+
+  const activityItems = useMemo(() => {
+    const receiptRecords = receipts.map((receipt) => ({
+      id: receipt.id,
+      kind: "receipt" as const,
+      createdAt: receipt.receivedAt,
+      receipt,
+    }));
+
+    const shareRecords = sendEvents.map((event) => ({
+      id: event.id,
+      kind: "share" as const,
+      createdAt: event.createdAt,
+      event,
+    }));
+
+    return [...receiptRecords, ...shareRecords].sort(
+      (first, second) =>
+        new Date(second.createdAt).getTime() -
+        new Date(first.createdAt).getTime(),
+    );
+  }, [receipts, sendEvents]);
+
+  const filteredActivity = activityItems.filter((item) => {
+    if (activityFilter === "receipts") return item.kind === "receipt";
+    if (activityFilter === "sharing") return item.kind === "share";
+    return true;
+  });
+
+  const visibleActivity = showAllActivity
+    ? filteredActivity
+    : filteredActivity.slice(0, 8);
+
+  const hasMoreActivity = filteredActivity.length > visibleActivity.length;
+
   return (
     <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-      <h4 className="text-lg font-black">Order activity</h4>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-black">Receipts</p>
+          <h4 className="text-lg font-black">Order activity</h4>
+          <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+            Review receiving records and supplier sharing history for this
+            purchase order.
+          </p>
+        </div>
 
-          {receipts.length ? (
-            <div className="mt-3 space-y-3">
-              {receipts.map((receipt) => (
-                <div
-                  key={receipt.id}
+        <StatusBadge variant="primary">
+          {activityItems.length.toLocaleString()} record
+          {activityItems.length === 1 ? "" : "s"}
+        </StatusBadge>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <MiniMetric label="Receipts" value={receipts.length} />
+        <MiniMetric label="Shared" value={sendEvents.length} />
+        <MiniMetric label="Total activity" value={activityItems.length} />
+      </div>
+
+      <div className="mt-4 grid gap-2 min-[430px]:grid-cols-3">
+        {[
+          {
+            key: "all" as const,
+            label: "All activity",
+            count: activityItems.length,
+          },
+          {
+            key: "receipts" as const,
+            label: "Receipts",
+            count: receipts.length,
+          },
+          {
+            key: "sharing" as const,
+            label: "Sharing",
+            count: sendEvents.length,
+          },
+        ].map((filter) => {
+          const isActive = activityFilter === filter.key;
+
+          return (
+            <button
+              key={filter.key}
+              type="button"
+              onClick={() => {
+                setActivityFilter(filter.key);
+                setShowAllActivity(false);
+              }}
+              className={[
+                "min-h-10 rounded-2xl border px-3 py-2 text-center text-xs font-black transition",
+                isActive
+                  ? "border-primary bg-primary text-primary-foreground shadow-soft"
+                  : "border-border bg-background text-foreground hover:border-primary/50",
+              ].join(" ")}
+            >
+              {filter.label} · {filter.count.toLocaleString()}
+            </button>
+          );
+        })}
+      </div>
+
+      {filteredActivity.length ? (
+        <div className="mt-4 space-y-3">
+          {visibleActivity.map((item) => {
+            if (item.kind === "receipt") {
+              const receipt = item.receipt;
+              const relatedItems = receiptItems.filter(
+                (receiptItem) =>
+                  receiptItem.purchaseOrderReceiptId === receipt.id,
+              );
+
+              const totalReceived = relatedItems.reduce(
+                (sum, receiptItem) => sum + receiptItem.quantityReceived,
+                0,
+              );
+
+              return (
+                <article
+                  key={item.id}
                   className="rounded-3xl border border-border bg-background p-4"
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge variant="success">
-                      {receipt.receiptNumber}
-                    </StatusBadge>
-                    <StatusBadge variant="primary">
-                      {receipt.receivedBranchName}
-                    </StatusBadge>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge variant="success">
+                        Stock received
+                      </StatusBadge>
+                      <StatusBadge variant="primary">
+                        {receipt.receiptNumber}
+                      </StatusBadge>
+                    </div>
+
+                    <p className="text-xs font-bold text-muted-foreground">
+                      {new Date(receipt.receivedAt).toLocaleString()}
+                    </p>
                   </div>
 
-                  <div className="mt-3 grid gap-2">
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <DetailRow
+                      label="Receiving location"
+                      value={receipt.receivedBranchName}
+                    />
                     <DetailRow
                       label="Received by"
                       value={receipt.receivedByName || "Not recorded"}
                     />
                     <DetailRow
-                      label="Date"
-                      value={new Date(receipt.receivedAt).toLocaleString()}
+                      label="Quantity received"
+                      value={totalReceived.toLocaleString()}
                     />
                   </div>
 
-                  <div className="mt-3 space-y-2">
-                    {receiptItems
-                      .filter(
-                        (item) => item.purchaseOrderReceiptId === receipt.id,
-                      )
-                      .map((item) => (
-                        <DetailRow
-                          key={item.id}
-                          label={item.itemName}
-                          value={`${item.quantityReceived.toLocaleString()} received`}
-                        />
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-2 rounded-2xl border border-border bg-background p-4 text-sm font-semibold text-muted-foreground">
-              No stock has been received from this order yet.
-            </p>
-          )}
-        </div>
+                  {relatedItems.length ? (
+                    <div className="mt-3 rounded-2xl border border-border bg-surface p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+                        Products received
+                      </p>
 
-        <div>
-          <p className="text-sm font-black">Send history</p>
+                      <div className="mt-2 grid gap-2">
+                        {relatedItems.map((receiptItem) => (
+                          <div
+                            key={receiptItem.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-background px-3 py-2 text-sm font-bold"
+                          >
+                            <span className="break-words">
+                              {receiptItem.itemName}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {receiptItem.quantityReceived.toLocaleString()}{" "}
+                              received
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            }
 
-          {sendEvents.length ? (
-            <div className="mt-3 space-y-3">
-              {sendEvents.map((event) => (
-                <div
-                  key={event.id}
-                  className="rounded-3xl border border-border bg-background p-4"
-                >
+            const event = item.event;
+
+            return (
+              <article
+                key={item.id}
+                className="rounded-3xl border border-border bg-background p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge variant="primary">
                       {formatSendMethod(event.method)}
@@ -1743,38 +2156,60 @@ function HistorySection({
                     </StatusBadge>
                   </div>
 
-                  <div className="mt-3 grid gap-2">
-                    <DetailRow
-                      label="Recipient"
-                      value={
-                        event.recipientName ||
-                        event.recipientEmail ||
-                        event.recipientPhone ||
-                        "Not recorded"
-                      }
-                    />
-                    <DetailRow
-                      label="Recorded by"
-                      value={event.sentByName || "Not recorded"}
-                    />
-                    <DetailRow
-                      label="Date"
-                      value={new Date(event.createdAt).toLocaleString()}
-                    />
-                    {event.failureReason ? (
-                      <DetailRow label="Note" value={event.failureReason} />
-                    ) : null}
-                  </div>
+                  <p className="text-xs font-bold text-muted-foreground">
+                    {new Date(event.createdAt).toLocaleString()}
+                  </p>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-2 rounded-2xl border border-border bg-background p-4 text-sm font-semibold text-muted-foreground">
-              No send events recorded yet.
-            </p>
-          )}
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <DetailRow
+                    label="Recipient"
+                    value={
+                      event.recipientName ||
+                      event.recipientEmail ||
+                      event.recipientPhone ||
+                      "Not recorded"
+                    }
+                  />
+                  <DetailRow
+                    label="Recorded by"
+                    value={event.sentByName || "Not recorded"}
+                  />
+                  <DetailRow
+                    label="Subject"
+                    value={event.subject || "Not recorded"}
+                  />
+                </div>
+
+                {event.failureReason ? (
+                  <div className="mt-3 rounded-2xl border border-warning/25 bg-warning/10 p-3 text-sm font-bold leading-6 text-warning">
+                    {event.failureReason}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+
+          {hasMoreActivity || showAllActivity ? (
+            <button
+              type="button"
+              onClick={() => setShowAllActivity((current) => !current)}
+              className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-black text-foreground transition hover:border-primary/50"
+            >
+              {showAllActivity
+                ? "Show latest activity only"
+                : `Show all ${filteredActivity.length.toLocaleString()} records`}
+            </button>
+          ) : null}
         </div>
-      </div>
+      ) : (
+        <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-6 text-center">
+          <h5 className="text-base font-black">No activity recorded</h5>
+          <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-muted-foreground">
+            Receiving records and supplier sharing history will appear here.
+          </p>
+        </div>
+      )}
     </section>
   );
 }
@@ -1820,7 +2255,7 @@ function EmptyPurchaseOrderState({
 function PurchaseOrderSkeleton() {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.35fr)]">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+      <div className="grid min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-1">
         {Array.from({ length: 3 }).map((_, index) => (
           <div
             key={index}
@@ -1878,7 +2313,7 @@ function ActionButton({
       onClick={onClick}
       disabled={loading}
       className={[
-        "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-3",
         primary
           ? "bg-primary text-primary-foreground shadow-soft hover:brightness-110"
           : "border border-border bg-background text-foreground hover:border-primary/50",
@@ -1894,40 +2329,44 @@ function ActionButton({
           ].join(" ")}
         />
       ) : null}
-      {label}
+      <span className="truncate">{label}</span>
     </button>
   );
 }
 
 function SummaryCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-3xl border border-border bg-background p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+    <div className="min-w-0 rounded-3xl border border-border bg-background p-3 sm:p-4">
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-black">{value.toLocaleString()}</p>
+      <p className="mt-2 truncate text-xl font-black sm:text-2xl">
+        {value.toLocaleString()}
+      </p>
     </div>
   );
 }
 
 function MiniMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-border bg-background p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+    <div className="min-w-0 rounded-2xl border border-border bg-background p-3">
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-2 text-lg font-black">{value.toLocaleString()}</p>
+      <p className="mt-2 truncate text-base font-black sm:text-lg">
+        {value.toLocaleString()}
+      </p>
     </div>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-background p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+    <div className="min-w-0 rounded-2xl border border-border bg-background p-3">
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-1 break-words text-sm font-black">{value}</p>
+      <p className="mt-1 break-words text-sm font-black leading-5">{value}</p>
     </div>
   );
 }
