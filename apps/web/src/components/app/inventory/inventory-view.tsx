@@ -1216,6 +1216,11 @@ export function StockView({ context, appAccess }: StockViewProps) {
             onReceiveStock={() => openReceiveDrawer(selectedItem)}
             onAdjustStock={() => openAdjustDrawer(selectedItem)}
             onUpdateAlert={openAlertDrawer}
+            onViewFullHistory={() => {
+              setSearch(selectedItem.name);
+              setActiveTab("history");
+              closeDrawer();
+            }}
           />
         ) : null}
 
@@ -2012,6 +2017,7 @@ function ItemDetailsView({
   onReceiveStock,
   onAdjustStock,
   onUpdateAlert,
+  onViewFullHistory,
 }: {
   item: CatalogItem;
   stock: BranchStock[];
@@ -2023,6 +2029,7 @@ function ItemDetailsView({
   onReceiveStock: () => void;
   onAdjustStock: () => void;
   onUpdateAlert: (row: BranchStock) => void;
+  onViewFullHistory: () => void;
 }) {
   const totals = stock.reduce(
     (result, row) => {
@@ -2213,7 +2220,17 @@ function ItemDetailsView({
 
       {item.kind === "PRODUCT" && usesStock ? (
         <section className="rounded-section border border-border bg-surface p-5">
-          <h4 className="text-lg font-black">Recent activity</h4>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-black">Recent activity</h4>
+              <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+                Latest 5 stock changes for this product.
+              </p>
+            </div>
+            <StatusBadge variant="primary">
+              {Math.min(movements.length, 5).toLocaleString()} latest
+            </StatusBadge>
+          </div>
 
           {movements.length ? (
             <div className="mt-4 space-y-3">
@@ -2239,13 +2256,44 @@ function ItemDetailsView({
                       <span>Reference: {movement.reference}</span>
                     ) : null}
                   </div>
+
+                  <div className="mt-4 rounded-2xl border border-border bg-surface p-2">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <MovementMiniStat
+                        label="Available"
+                        before={movement.quantityAvailableBefore}
+                        after={movement.quantityAvailableAfter}
+                      />
+                      <MovementMiniStat
+                        label="Damaged"
+                        before={movement.quantityDamagedBefore}
+                        after={movement.quantityDamagedAfter}
+                      />
+                      <MovementMiniStat
+                        label="On hand"
+                        before={movement.quantityOnHandBefore}
+                        after={movement.quantityOnHandAfter}
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
+
+              <button
+                type="button"
+                onClick={onViewFullHistory}
+                className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-black text-foreground transition hover:border-primary/50 hover:bg-primary/5"
+              >
+                View full stock history
+              </button>
             </div>
           ) : (
-            <p className="mt-3 text-sm font-semibold leading-6 text-muted-foreground">
-              No recent stock activity for this product.
-            </p>
+            <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-5 text-center">
+              <p className="text-sm font-black">No recent activity yet</p>
+              <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+                Stock changes for this product will appear here.
+              </p>
+            </div>
           )}
         </section>
       ) : null}
@@ -3142,13 +3190,19 @@ function MovementMiniStat({
   before: number;
   after: number;
 }) {
+  const change = after - before;
+  const changeLabel = `${change > 0 ? "+" : ""}${change.toLocaleString()}`;
+
   return (
     <div className="min-w-0 rounded-2xl border border-border bg-background px-2 py-3">
       <p className="truncate text-[8px] font-black uppercase tracking-[0.1em] text-muted-foreground min-[380px]:text-[9px] sm:text-[10px] sm:tracking-[0.14em]">
         {label}
       </p>
-      <p className="mt-2 truncate text-xs font-black leading-5 min-[380px]:text-sm">
+      <p className="mt-2 truncate text-[11px] font-black leading-5 min-[380px]:text-sm">
         {before.toLocaleString()} → {after.toLocaleString()}
+      </p>
+      <p className="mt-1 truncate text-[10px] font-black text-muted-foreground min-[380px]:text-xs">
+        Change {changeLabel}
       </p>
     </div>
   );
