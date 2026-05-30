@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ClipboardList,
@@ -138,6 +144,10 @@ export function PurchaseOrdersPanel({
   const [orders, setOrders] = useState<PurchaseOrderSummaryView[]>([]);
   const [selectedOrder, setSelectedOrder] =
     useState<SelectedPurchaseOrder | null>(null);
+  const [isOrderDrawerOpen, setIsOrderDrawerOpen] = useState(false);
+  const [selectedOrderCache, setSelectedOrderCache] = useState<
+    Record<string, SelectedPurchaseOrder>
+  >({});
 
   const [form, setForm] = useState<PurchaseOrderForm>(initialOrderForm);
   const [editingOrderId, setEditingOrderId] = useState("");
@@ -260,6 +270,7 @@ export function PurchaseOrdersPanel({
         await loadSelectedOrder(orderToOpen.id);
       } else {
         setSelectedOrder(null);
+        setIsOrderDrawerOpen(false);
       }
     } catch (caughtError) {
       setError(
@@ -275,13 +286,19 @@ export function PurchaseOrdersPanel({
   async function loadSelectedOrder(orderId: string) {
     const result = await getPurchaseOrder(orderId);
 
-    setSelectedOrder({
+    const nextSelectedOrder: SelectedPurchaseOrder = {
       purchaseOrder: result.purchaseOrder,
       items: result.items,
       receipts: result.receipts,
       receiptItems: result.receiptItems,
       sendEvents: result.sendEvents,
-    });
+    };
+
+    setSelectedOrder(nextSelectedOrder);
+    setSelectedOrderCache((current) => ({
+      ...current,
+      [orderId]: nextSelectedOrder,
+    }));
 
     setSendForm({
       recipientName: result.purchaseOrder.supplierContactPerson || "",
@@ -302,16 +319,28 @@ export function PurchaseOrdersPanel({
     });
 
     setCancelReason("");
+
+    return nextSelectedOrder;
   }
 
   async function openOrder(orderId: string) {
+    const cachedOrder = selectedOrderCache[orderId];
+
+    setIsOrderDrawerOpen(true);
     setIsOpeningOrder(true);
     setError("");
     setSuccess("");
 
+    if (cachedOrder) {
+      setSelectedOrder(cachedOrder);
+    } else {
+      setSelectedOrder(null);
+    }
+
     try {
       await loadSelectedOrder(orderId);
     } catch (caughtError) {
+      setIsOrderDrawerOpen(false);
       setError(
         caughtError instanceof Error
           ? caughtError.message
@@ -420,6 +449,7 @@ export function PurchaseOrdersPanel({
 
       closeForm();
       await reloadPanel(result.purchaseOrder.id);
+      setIsOrderDrawerOpen(true);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -760,65 +790,71 @@ export function PurchaseOrdersPanel({
       ) : null}
 
       {!isLoading && orders.length > 0 ? (
-        <section className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(340px,0.82fr)_minmax(0,1.45fr)]">
-          <section className="space-y-3">
-            <div className="rounded-3xl border border-border bg-surface p-4 shadow-soft">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black">Order list</p>
-                  <p className="mt-1 text-xs font-bold text-muted-foreground">
-                    Choose an order to open the command center.
-                  </p>
-                </div>
-                <StatusBadge variant="primary">
-                  {orders.length.toLocaleString()} shown
-                </StatusBadge>
+        <section className="space-y-3">
+          <div className="rounded-3xl border border-border bg-surface p-4 shadow-soft">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-sm font-black">Order list</p>
+                <p className="mt-1 text-xs font-bold text-muted-foreground">
+                  Tap an order to open its command center.
+                </p>
               </div>
+              <StatusBadge variant="primary">
+                {orders.length.toLocaleString()} shown
+              </StatusBadge>
             </div>
+          </div>
 
-            <div className="grid min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-1">
-              {orders.map((order) => (
-                <PurchaseOrderCard
-                  key={order.id}
-                  order={order}
-                  isOpening={isOpeningOrder}
-                  isSelected={selectedOrder?.purchaseOrder.id === order.id}
-                  onOpen={() => void openOrder(order.id)}
-                />
-              ))}
-            </div>
-          </section>
-
-          <PurchaseOrderCommandCenter
-            selectedOrder={selectedOrder}
-            branches={branches}
-            receiveForm={receiveForm}
-            sendForm={sendForm}
-            cancelReason={cancelReason}
-            isMarkingOrdered={isMarkingOrdered}
-            isCancelling={isCancelling}
-            isReceiving={isReceiving}
-            sendingMethod={sendingMethod}
-            canUpdatePurchaseOrder={canUpdatePurchaseOrder}
-            canMarkPurchaseOrderOrdered={canMarkPurchaseOrderOrdered}
-            canCancelPurchaseOrder={canCancelPurchaseOrder}
-            canReceivePurchaseOrder={canReceivePurchaseOrder}
-            canSendPurchaseOrder={canSendPurchaseOrder}
-            onEdit={() => {
-              if (selectedOrder) {
-                openEditForm(selectedOrder);
-              }
-            }}
-            onMarkOrdered={() => void handleMarkOrdered()}
-            onCancel={() => void handleCancelOrder()}
-            onReceive={handleReceiveOrder}
-            onSend={(method) => void handleSendOrder(method)}
-            onReceiveFormChange={setReceiveForm}
-            onSendFormChange={setSendForm}
-            onCancelReasonChange={setCancelReason}
-          />
+          <div className="grid min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            {orders.map((order) => (
+              <PurchaseOrderCard
+                key={order.id}
+                order={order}
+                isOpening={isOpeningOrder}
+                isSelected={selectedOrder?.purchaseOrder.id === order.id}
+                onOpen={() => void openOrder(order.id)}
+              />
+            ))}
+          </div>
         </section>
       ) : null}
+
+      <PurchaseOrderCommandDrawer
+        open={isOrderDrawerOpen}
+        selectedOrder={selectedOrder}
+        isLoading={isOpeningOrder}
+        onClose={() => setIsOrderDrawerOpen(false)}
+      >
+        <PurchaseOrderCommandCenter
+          selectedOrder={selectedOrder}
+          branches={branches}
+          receiveForm={receiveForm}
+          sendForm={sendForm}
+          cancelReason={cancelReason}
+          isMarkingOrdered={isMarkingOrdered}
+          isCancelling={isCancelling}
+          isReceiving={isReceiving}
+          sendingMethod={sendingMethod}
+          canUpdatePurchaseOrder={canUpdatePurchaseOrder}
+          canMarkPurchaseOrderOrdered={canMarkPurchaseOrderOrdered}
+          canCancelPurchaseOrder={canCancelPurchaseOrder}
+          canReceivePurchaseOrder={canReceivePurchaseOrder}
+          canSendPurchaseOrder={canSendPurchaseOrder}
+          onEdit={() => {
+            if (selectedOrder) {
+              setIsOrderDrawerOpen(false);
+              openEditForm(selectedOrder);
+            }
+          }}
+          onMarkOrdered={() => void handleMarkOrdered()}
+          onCancel={() => void handleCancelOrder()}
+          onReceive={handleReceiveOrder}
+          onSend={(method) => void handleSendOrder(method)}
+          onReceiveFormChange={setReceiveForm}
+          onSendFormChange={setSendForm}
+          onCancelReasonChange={setCancelReason}
+        />
+      </PurchaseOrderCommandDrawer>
     </section>
   );
 }
@@ -1006,7 +1042,6 @@ function PurchaseOrderFormCard({
                   min="0"
                 />
               </div>
-
             </div>
           ))}
         </div>
@@ -1096,6 +1131,117 @@ function PurchaseOrderCard({
         />
       </div>
     </button>
+  );
+}
+
+function PurchaseOrderCommandDrawer({
+  open,
+  selectedOrder,
+  isLoading,
+  children,
+  onClose,
+}: {
+  open: boolean;
+  selectedOrder: SelectedPurchaseOrder | null;
+  isLoading: boolean;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+      <button
+        type="button"
+        aria-label="Close purchase order command center"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+
+      <aside className="absolute inset-y-0 right-0 flex w-full flex-col overflow-hidden border-l border-border bg-background shadow-2xl sm:max-w-4xl 2xl:max-w-5xl">
+        <div className="rurix-scrollbar flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              aria-label="Close purchase order command center"
+              onClick={onClose}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border bg-surface text-muted-foreground transition hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {selectedOrder ? (
+            children
+          ) : (
+            <PurchaseOrderDrawerSkeleton isLoading={isLoading} />
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function PurchaseOrderDrawerSkeleton({ isLoading }: { isLoading: boolean }) {
+  return (
+    <section className="space-y-4">
+      <section className="overflow-hidden rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-3">
+            <div className="h-5 w-44 animate-pulse rounded-full bg-muted/20" />
+            <div className="h-8 w-72 max-w-full animate-pulse rounded-2xl bg-muted/20" />
+            <div className="h-5 w-36 animate-pulse rounded-xl bg-muted/20" />
+          </div>
+          <div className="grid w-full grid-cols-3 gap-2 sm:w-[320px]">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-20 animate-pulse rounded-2xl border border-border bg-background"
+              />
+            ))}
+          </div>
+        </div>
+        <div className="mt-5 h-16 animate-pulse rounded-3xl border border-border bg-background" />
+        <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-12 animate-pulse rounded-2xl border border-border bg-background"
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-section border border-border bg-surface p-3 shadow-card">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-16 animate-pulse rounded-2xl border border-border bg-background"
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+        <div className="h-6 w-48 animate-pulse rounded-2xl bg-muted/20" />
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-16 animate-pulse rounded-2xl border border-border bg-background"
+            />
+          ))}
+        </div>
+        <p className="mt-4 text-sm font-bold text-muted-foreground">
+          {isLoading
+            ? "Opening purchase order..."
+            : "Preparing purchase order details..."}
+        </p>
+      </section>
+    </section>
   );
 }
 
@@ -1255,7 +1401,7 @@ function PurchaseOrderCommandCenter({
     : "overview";
 
   return (
-    <aside className="min-w-0 space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
+    <aside className="min-w-0 space-y-4">
       <section className="overflow-hidden rounded-section border border-border bg-surface shadow-card">
         <div className="relative p-4 sm:p-5">
           <div className="absolute right-0 top-0 h-28 w-28 rounded-full bg-primary/10 blur-3xl" />
@@ -1803,7 +1949,6 @@ function ReceiveStockCard({
                   product.
                 </p>
               ) : null}
-
             </div>
           );
         })}
