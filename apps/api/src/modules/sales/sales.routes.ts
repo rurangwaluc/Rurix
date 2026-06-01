@@ -159,6 +159,15 @@ type DbSaleReceipt = DbRow & {
   created_at: Date;
 };
 
+type DbOpenCashDrawerSession = DbRow & {
+  id: string;
+  expected_cash_cents: number;
+};
+
+type DbCashDrawerMovementCreated = DbRow & {
+  id: string;
+};
+
 function cleanText(value: string | undefined | null) {
   const trimmed = value?.trim();
 
@@ -513,6 +522,13 @@ function salesErrorReply(reply: FastifyReply, error: unknown) {
     return reply.status(400).send({
       ok: false,
       message: "Payment amount must match the sale total for now.",
+    });
+  }
+
+  if (error instanceof Error && error.message === "CASH_DRAWER_CLOSED") {
+    return reply.status(400).send({
+      ok: false,
+      message: "Open the cash drawer before recording a cash sale.",
     });
   }
 
@@ -1390,6 +1406,33 @@ export async function salesRoutes(app: FastifyInstance) {
           counterName: "sale-receipt",
         });
 
+        const cashPaymentTotalCents = parsed.data.payments
+          .filter((payment) => payment.method === "cash")
+          .reduce((sum, payment) => sum + payment.amountCents, 0);
+
+        let openCashDrawerSession: DbOpenCashDrawerSession | null = null;
+
+        if (cashPaymentTotalCents > 0) {
+          const openCashDrawerResult =
+            await client.query<DbOpenCashDrawerSession>(
+              `
+                select id, expected_cash_cents
+                from cash_drawer_sessions
+                where business_id = $1
+                  and branch_id = $2
+                  and status = 'open'
+                for update
+              `,
+              [context.business.id, parsed.data.branchId],
+            );
+
+          openCashDrawerSession = openCashDrawerResult.rows[0] || null;
+
+          if (!openCashDrawerSession) {
+            throw new Error("CASH_DRAWER_CLOSED");
+          }
+        }
+
         const saleResult = await client.query<{ id: string } & DbRow>(
           `
             insert into sales (
@@ -1538,7 +1581,10 @@ export async function salesRoutes(app: FastifyInstance) {
         }
 
         for (const payment of parsed.data.payments) {
-          await client.query(
+          const paymentReference =
+            cleanText(payment.reference) || receiptNumber;
+
+          const paymentResult = await client.query<{ id: string } & DbRow>(
             `
               insert into sale_payments (
                 business_id,
@@ -1549,16 +1595,113 @@ export async function salesRoutes(app: FastifyInstance) {
                 received_by_user_id
               )
               values ($1, $2, $3, $4, $5, $6)
+              returning id
             `,
             [
               context.business.id,
               sale.id,
               payment.method,
               payment.amountCents,
-              cleanText(payment.reference),
+              paymentReference,
               context.user.id,
             ],
           );
+
+          const salePayment = paymentResult.rows[0];
+
+          if (!salePayment) {
+            throw new Error("SALE_PAYMENT_NOT_CREATED");
+          }
+
+          if (payment.method === "cash") {
+            if (!openCashDrawerSession) {
+              throw new Error("CASH_DRAWER_CLOSED");
+            }
+
+            const balanceBeforeCents = toNumber(
+              openCashDrawerSession.expected_cash_cents,
+            );
+            const balanceAfterCents = balanceBeforeCents + payment.amountCents;
+
+            const movementResult =
+              await client.query<DbCashDrawerMovementCreated>(
+                `
+                  insert into cash_drawer_movements (
+                    business_id,
+                    branch_id,
+                    cash_drawer_session_id,
+                    sale_id,
+                    sale_payment_id,
+                    movement_type,
+                    amount_cents,
+                    balance_before_cents,
+                    balance_after_cents,
+                    reason,
+                    reference,
+                    actor_user_id
+                  )
+                  values ($1, $2, $3, $4, $5, 'cash_sale', $6, $7, $8, $9, $10, $11)
+                  returning id
+                `,
+                [
+                  context.business.id,
+                  parsed.data.branchId,
+                  openCashDrawerSession.id,
+                  sale.id,
+                  salePayment.id,
+                  payment.amountCents,
+                  balanceBeforeCents,
+                  balanceAfterCents,
+                  "Cash sale recorded",
+                  receiptNumber,
+                  context.user.id,
+                ],
+              );
+
+            const movement = movementResult.rows[0];
+
+            if (!movement) {
+              throw new Error("CASH_DRAWER_MOVEMENT_NOT_CREATED");
+            }
+
+            await client.query(
+              `
+                update cash_drawer_sessions
+                set
+                  expected_cash_cents = $1,
+                  updated_at = now()
+                where id = $2
+                  and business_id = $3
+              `,
+              [
+                balanceAfterCents,
+                openCashDrawerSession.id,
+                context.business.id,
+              ],
+            );
+
+            await client.query(
+              `
+                update sale_payments
+                set
+                  cash_drawer_session_id = $1,
+                  cash_drawer_movement_id = $2
+                where id = $3
+                  and business_id = $4
+              `,
+              [
+                openCashDrawerSession.id,
+                movement.id,
+                salePayment.id,
+                context.business.id,
+              ],
+            );
+
+            openCashDrawerSession = {
+              ...openCashDrawerSession,
+              expected_cash_cents: balanceAfterCents,
+            };
+          }
         }
 
         await client.query(
