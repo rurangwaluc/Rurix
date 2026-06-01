@@ -31,6 +31,7 @@ import { DashboardView } from "../../components/app/dashboard-view";
 import { StaffView } from "../../components/app/staff-view";
 import { StockView } from "../../components/app/stock-view";
 import { LocationsView } from "../../components/app/locations-view";
+import { PosView } from "../../components/app/pos-view";
 import {
   buildAppAccess,
   canOpenSection,
@@ -711,6 +712,10 @@ export default function AppPage() {
                 />
               ) : null}
 
+              {activeSection === "sales" && canOpenSection(access, "sales") ? (
+                <PosView context={context} />
+              ) : null}
+
               {activeSection === "staff" && canOpenSection(access, "staff") ? (
                 <StaffView
                   context={context}
@@ -769,6 +774,7 @@ export default function AppPage() {
               ) : null}
 
               {activeSection !== "dashboard" &&
+              activeSection !== "sales" &&
               activeSection !== "staff" &&
               activeSection !== "stock" &&
               activeSection !== "locations" ? (
