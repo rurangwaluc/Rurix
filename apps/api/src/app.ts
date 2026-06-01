@@ -1,3 +1,4 @@
+import { customerRoutes, salesRoutes } from "./modules/sales/sales.routes";
 import { env, isProduction } from "@rurix/config";
 
 import Fastify from "fastify";
@@ -66,6 +67,14 @@ export async function createApp() {
 
   await app.register(purchaseOrdersRoutes, {
     prefix: "/purchase-orders",
+  });
+
+  await app.register(salesRoutes, {
+    prefix: "/sales",
+  });
+
+  await app.register(customerRoutes, {
+    prefix: "/customers",
   });
 
   await app.register(locationsRoutes, {
