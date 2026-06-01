@@ -11,14 +11,24 @@ const ownerPermissions = allPermissions.filter(
 const partnerDefaultPermissions: Permission[] = [
   "BUSINESS_VIEW",
   "BRANCH_VIEW",
+
   "CATALOG_VIEW",
+
+  "CUSTOMER_VIEW",
+
+  "SALE_VIEW",
+  "SALE_RECEIPT_VIEW",
+
   "STOCK_VIEW",
   "STOCK_MOVEMENT_VIEW",
   "STOCK_TRANSFER_VIEW",
+
   "SUPPLIER_VIEW",
   "PURCHASE_ORDER_VIEW",
+
   "ORDER_VIEW",
   "PAYMENT_VIEW",
+
   "REPORT_VIEW",
   "RISK_VIEW",
   "ACTIVITY_VIEW",
@@ -46,6 +56,14 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
     "CATALOG_CREATE",
     "CATALOG_UPDATE",
     "CATALOG_PRICE_UPDATE",
+
+    "CUSTOMER_VIEW",
+    "CUSTOMER_CREATE",
+    "CUSTOMER_UPDATE",
+
+    "SALE_VIEW",
+    "SALE_CREATE",
+    "SALE_RECEIPT_VIEW",
 
     "ORDER_VIEW",
 
@@ -95,6 +113,14 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
 
     "CATALOG_VIEW",
 
+    "CUSTOMER_VIEW",
+    "CUSTOMER_CREATE",
+    "CUSTOMER_UPDATE",
+
+    "SALE_VIEW",
+    "SALE_CREATE",
+    "SALE_RECEIPT_VIEW",
+
     "ORDER_VIEW",
     "ORDER_CANCEL_REQUEST",
 
@@ -131,6 +157,13 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
 
     "CATALOG_VIEW",
 
+    "CUSTOMER_VIEW",
+    "CUSTOMER_CREATE",
+
+    "SALE_VIEW",
+    "SALE_CREATE",
+    "SALE_RECEIPT_VIEW",
+
     "ORDER_CREATE",
     "ORDER_SUBMIT",
     "ORDER_VIEW",
@@ -147,6 +180,13 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
     "BRANCH_VIEW",
 
     "CATALOG_VIEW",
+
+    "CUSTOMER_VIEW",
+    "CUSTOMER_CREATE",
+
+    "SALE_VIEW",
+    "SALE_CREATE",
+    "SALE_RECEIPT_VIEW",
 
     "ORDER_VIEW",
 
@@ -192,6 +232,8 @@ const branchRolePermissions: Record<BranchRole, Permission[]> = {
     "BRANCH_VIEW",
 
     "CATALOG_VIEW",
+
+    "CUSTOMER_VIEW",
 
     "ORDER_VIEW",
 
