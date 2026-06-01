@@ -85,6 +85,19 @@ export type SaleReceipt = {
   createdAt: string;
 };
 
+export type PosProduct = {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  sellingPriceCents: number;
+  quantityAvailable: number;
+  quantityOnHand: number;
+  quantityDamaged: number;
+  soldQuantity30Days: number;
+  lastSoldAt: string | null;
+};
+
 export type CreateCustomerPayload = {
   name: string;
   phone?: string;
@@ -137,6 +150,26 @@ function buildQuery(params: Record<string, string | undefined>) {
   const value = query.toString();
 
   return value ? `?${value}` : "";
+}
+
+export function listPosProducts(params: {
+  branchId: string;
+  search?: string;
+  limit?: number;
+}) {
+  return apiRequest<{
+    ok: true;
+    products: PosProduct[];
+  }>(
+    `/sales/pos-products${buildQuery({
+      branchId: params.branchId,
+      search: params.search,
+      limit: params.limit ? String(params.limit) : undefined,
+    })}`,
+    {
+      auth: true,
+    },
+  );
 }
 
 export function listCustomers(

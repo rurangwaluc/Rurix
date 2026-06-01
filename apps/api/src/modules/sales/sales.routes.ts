@@ -49,6 +49,19 @@ type DbCatalogItemForSale = DbRow & {
   selling_price_cents: number | null;
 };
 
+type DbPosProduct = DbRow & {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  selling_price_cents: number | null;
+  quantity_available: number;
+  quantity_on_hand: number;
+  quantity_damaged: number;
+  sold_quantity_30_days: number;
+  last_sold_at: Date | null;
+};
+
 type DbStockRecord = DbRow & {
   id: string;
   business_id: string;
@@ -289,6 +302,21 @@ function mapSaleReceipt(row: DbSaleReceipt) {
     issuedAt: row.issued_at,
     issuedByName: row.issued_by_name,
     createdAt: row.created_at,
+  };
+}
+
+function mapPosProduct(row: DbPosProduct) {
+  return {
+    id: row.id,
+    name: row.name,
+    sku: row.sku,
+    barcode: row.barcode,
+    sellingPriceCents: toNumber(row.selling_price_cents),
+    quantityAvailable: toNumber(row.quantity_available),
+    quantityOnHand: toNumber(row.quantity_on_hand),
+    quantityDamaged: toNumber(row.quantity_damaged),
+    soldQuantity30Days: toNumber(row.sold_quantity_30_days),
+    lastSoldAt: row.last_sold_at,
   };
 }
 
@@ -819,6 +847,144 @@ export async function customerRoutes(app: FastifyInstance) {
 }
 
 export async function salesRoutes(app: FastifyInstance) {
+  app.get("/pos-products", async (request, reply) => {
+    const context = await requireAuth(app, request);
+
+    if (!context) {
+      return reply.status(401).send({
+        ok: false,
+        message: "Please sign in again.",
+      });
+    }
+
+    const blockedByBusinessType = salesBusinessGuard(
+      reply,
+      context.business.business_type,
+    );
+
+    if (blockedByBusinessType) {
+      return blockedByBusinessType;
+    }
+
+    if (!contextHasPermission(context, "SALE_CREATE")) {
+      return reply.status(403).send({
+        ok: false,
+        message: "You do not have access to create sales.",
+      });
+    }
+
+    const requestQuery = request.query as {
+      branchId?: string;
+      search?: string;
+      limit?: string;
+    };
+
+    const branchId = cleanText(requestQuery.branchId);
+
+    if (!branchId) {
+      return reply.status(400).send({
+        ok: false,
+        message: "Choose a selling location.",
+      });
+    }
+
+    if (!contextCanAccessBranch(context, branchId)) {
+      return reply.status(403).send({
+        ok: false,
+        message: "You do not have access to this selling location.",
+      });
+    }
+
+    try {
+      await ensureBranch({
+        businessId: context.business.id,
+        branchId,
+      });
+
+      const rawLimit = Number(requestQuery.limit || 12);
+      const limit = Math.min(Math.max(Math.round(rawLimit) || 12, 1), 50);
+      const search = cleanText(requestQuery.search);
+
+      const values: unknown[] = [context.business.id, branchId];
+      const where: string[] = [
+        "ci.business_id = $1",
+        "bis.branch_id = $2",
+        "ci.item_kind = 'PRODUCT'",
+        "ci.track_stock = true",
+        "ci.status = 'active'",
+        "coalesce(bis.quantity_available, 0) > 0",
+      ];
+
+      if (search) {
+        values.push(`%${search}%`);
+        where.push(`
+          (
+            ci.name ilike $${values.length}
+            or ci.sku ilike $${values.length}
+            or ci.barcode ilike $${values.length}
+          )
+        `);
+      }
+
+      values.push(limit);
+
+      const result = await query<DbPosProduct>(
+        `
+          select
+            ci.id,
+            ci.name,
+            ci.sku,
+            ci.barcode,
+            ci.selling_price_cents,
+            bis.quantity_available,
+            bis.quantity_on_hand,
+            bis.quantity_damaged,
+            coalesce(
+              sum(si.quantity) filter (
+                where s.completed_at >= now() - interval '30 days'
+                  and s.branch_id = $2
+                  and s.status = 'completed'
+              ),
+              0
+            )::int as sold_quantity_30_days,
+            max(s.completed_at) filter (
+              where s.branch_id = $2
+                and s.status = 'completed'
+            ) as last_sold_at
+          from catalog_items ci
+          inner join branch_item_stock bis on bis.item_id = ci.id
+            and bis.business_id = ci.business_id
+          left join sale_items si on si.item_id = ci.id
+            and si.business_id = ci.business_id
+          left join sales s on s.id = si.sale_id
+            and s.business_id = ci.business_id
+          where ${where.join(" and ")}
+          group by
+            ci.id,
+            ci.name,
+            ci.sku,
+            ci.barcode,
+            ci.selling_price_cents,
+            bis.quantity_available,
+            bis.quantity_on_hand,
+            bis.quantity_damaged
+          order by
+            sold_quantity_30_days desc,
+            last_sold_at desc nulls last,
+            ci.name asc
+          limit $${values.length}
+        `,
+        values,
+      );
+
+      return {
+        ok: true,
+        products: result.rows.map(mapPosProduct),
+      };
+    } catch (error) {
+      return salesErrorReply(reply, error);
+    }
+  });
   app.get("/", async (request, reply) => {
     const context = await requireAuth(app, request);
 

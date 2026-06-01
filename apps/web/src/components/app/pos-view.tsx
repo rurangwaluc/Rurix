@@ -16,20 +16,18 @@ import {
   UserPlus,
 } from "lucide-react";
 
-import {
-  listCatalogItems,
-  listStock,
-  type BranchStock,
-  type CatalogItem,
-  type CurrentUserResponse,
-} from "../../lib/api";
+import { type CurrentUserResponse } from "../../lib/api";
 import {
   createSale,
   listCustomers,
+  listPosProducts,
+  listSales,
   type Customer,
   type CreateSalePayload,
+  type PosProduct,
   type SaleDetailResponse,
   type SalePaymentMethod,
+  type SaleSummary,
 } from "../../lib/sales-api";
 import { StatusBadge } from "../status-badge";
 
@@ -69,8 +67,8 @@ export function PosView({ context }: PosViewProps) {
 
   const [selectedBranchId, setSelectedBranchId] = useState(defaultBranchId);
   const [search, setSearch] = useState("");
-  const [products, setProducts] = useState<CatalogItem[]>([]);
-  const [stock, setStock] = useState<BranchStock[]>([]);
+  const [products, setProducts] = useState<PosProduct[]>([]);
+  const [recentSales, setRecentSales] = useState<SaleSummary[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -81,7 +79,6 @@ export function PosView({ context }: PosViewProps) {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<SalePaymentMethod>("cash");
-  const [paymentReference, setPaymentReference] = useState("");
   const [saleNotes, setSaleNotes] = useState("");
 
   const [lastSale, setLastSale] = useState<SaleDetailResponse | null>(null);
@@ -90,41 +87,18 @@ export function PosView({ context }: PosViewProps) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const stockByItem = useMemo(() => {
-    const result = new Map<string, BranchStock>();
+  const productsById = useMemo(() => {
+    const result = new Map<string, PosProduct>();
 
-    for (const row of stock) {
-      result.set(row.itemId, row);
+    for (const product of products) {
+      result.set(product.id, product);
     }
 
     return result;
-  }, [stock]);
+  }, [products]);
 
-  const activeProducts = useMemo(
-    () =>
-      products.filter(
-        (product) =>
-          product.kind === "PRODUCT" &&
-          product.trackStock &&
-          product.status === "active",
-      ),
-    [products],
-  );
-
-  const visibleProducts = useMemo(() => {
-    const searchValue = search.trim().toLowerCase();
-
-    if (!searchValue) {
-      return activeProducts.slice(0, 12);
-    }
-
-    return activeProducts
-      .filter((product) => {
-        const sku = product.sku || "";
-        return `${product.name} ${sku}`.toLowerCase().includes(searchValue);
-      })
-      .slice(0, 18);
-  }, [activeProducts, search]);
+  const productLimit = search.trim() ? 20 : 12;
+  const visibleProducts = products;
 
   const filteredCustomers = useMemo(() => {
     const searchValue = customerSearch.trim().toLowerCase();
@@ -157,34 +131,43 @@ export function PosView({ context }: PosViewProps) {
   );
 
   useEffect(() => {
-    void reloadPos();
+    const timer = window.setTimeout(
+      () => {
+        void reloadPos();
+      },
+      search.trim() ? 250 : 0,
+    );
+
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranchId]);
+  }, [selectedBranchId, search]);
 
   async function reloadPos() {
     setIsLoading(true);
     setError("");
 
     try {
-      const [productResult, stockResult, customerResult] = await Promise.all([
-        listCatalogItems({ kind: "PRODUCT" }),
-        selectedBranchId
-          ? listStock({ branchId: selectedBranchId })
-          : listStock(),
+      const [productResult, customerResult, salesResult] = await Promise.all([
+        listPosProducts({
+          branchId: selectedBranchId,
+          search,
+          limit: productLimit,
+        }),
         listCustomers({ status: "active" }),
+        listSales({ branchId: selectedBranchId }),
       ]);
 
-      setProducts(productResult.items);
-      setStock(stockResult.stock);
+      setProducts(productResult.products);
       setCustomers(customerResult.customers);
+      setRecentSales(salesResult.sales.slice(0, 10));
 
       setCart((current) =>
         current
           .map((line) => {
-            const stockRow = stockResult.stock.find(
-              (row) => row.itemId === line.itemId,
+            const product = productResult.products.find(
+              (row) => row.id === line.itemId,
             );
-            const availableQuantity = stockRow?.quantityAvailable || 0;
+            const availableQuantity = product?.quantityAvailable || 0;
 
             return {
               ...line,
@@ -205,9 +188,8 @@ export function PosView({ context }: PosViewProps) {
     }
   }
 
-  function addProduct(product: CatalogItem) {
-    const stockRow = stockByItem.get(product.id);
-    const availableQuantity = stockRow?.quantityAvailable || 0;
+  function addProduct(product: PosProduct) {
+    const availableQuantity = product.quantityAvailable || 0;
 
     if (availableQuantity <= 0) {
       setError("This product has no stock available in the selected location.");
@@ -240,7 +222,7 @@ export function PosView({ context }: PosViewProps) {
           name: product.name,
           sku: product.sku || null,
           quantity: 1,
-          unitPriceCents: product.sellingPriceCents || 0,
+          unitPriceCents: product.sellingPriceCents,
           availableQuantity,
         },
       ];
@@ -277,7 +259,6 @@ export function PosView({ context }: PosViewProps) {
     setNewCustomerPhone("");
     setNewCustomerEmail("");
     setPaymentMethod("cash");
-    setPaymentReference("");
     setSaleNotes("");
   }
 
@@ -319,17 +300,12 @@ export function PosView({ context }: PosViewProps) {
     setSuccess("");
 
     try {
-      const paymentReferenceValue = paymentReference.trim();
       const saleNotesValue = saleNotes.trim();
 
       const payment: CreateSalePayload["payments"][number] = {
         method: paymentMethod,
         amountCents: subtotalCents,
       };
-
-      if (paymentReferenceValue) {
-        payment.reference = paymentReferenceValue;
-      }
 
       const payload: CreateSalePayload = {
         branchId: selectedBranchId,
@@ -417,14 +393,21 @@ export function PosView({ context }: PosViewProps) {
                 Create a sale
               </h1>
               <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-muted-foreground">
-                Choose the selling location, add products, record payment, and
-                confirm the sale. Stock reduces only after confirmation.
+                Choose the selling location, search products, record payment,
+                and confirm the sale. Stock reduces only after confirmation.
+              </p>
+              <p className="mt-2 max-w-2xl text-xs font-bold leading-5 text-muted-foreground">
+                Built for busy counters: search first, show only a focused set,
+                and keep the cart visible on larger screens.
               </p>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
               <SummaryCard label="Cart items" value={cartQuantity} />
-              <SummaryCard label="Products" value={visibleProducts.length} />
+              <SummaryCard
+                label="Products shown"
+                value={visibleProducts.length}
+              />
               <SummaryCard label="Sale total" value={money(subtotalCents)} />
             </div>
           </div>
@@ -456,7 +439,7 @@ export function PosView({ context }: PosViewProps) {
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Product name or code"
+                  placeholder="Search name, code, or scan barcode"
                   className="w-full bg-transparent text-sm font-bold outline-none"
                 />
               </div>
@@ -480,38 +463,47 @@ export function PosView({ context }: PosViewProps) {
       {isLoading ? <PosSkeleton /> : null}
 
       {!isLoading ? (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
           <section className="space-y-4">
             <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-black">Products available</h2>
+                  <h2 className="text-lg font-black">Fast product search</h2>
                   <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-                    Showing products for{" "}
-                    {selectedBranch?.name || "the selected location"}.
+                    Showing up to {productLimit} products for{" "}
+                    {selectedBranch?.name || "the selected location"}. Best
+                    sellers appear first, then recently sold products, then
+                    product name.
                   </p>
                 </div>
-                <StatusBadge variant="primary">
-                  {visibleProducts.length.toLocaleString()} shown
-                </StatusBadge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge variant="primary">
+                    {visibleProducts.length.toLocaleString()} shown
+                  </StatusBadge>
+                  <StatusBadge variant="warning">Search-first</StatusBadge>
+                </div>
               </div>
 
               {visibleProducts.length ? (
-                <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                  {visibleProducts.map((product) => {
-                    const stockRow = stockByItem.get(product.id);
-                    const availableQuantity = stockRow?.quantityAvailable || 0;
-
-                    return (
+                <>
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                    {visibleProducts.map((product) => (
                       <ProductSaleCard
                         key={product.id}
                         product={product}
-                        availableQuantity={availableQuantity}
+                        availableQuantity={product.quantityAvailable}
                         onAdd={() => addProduct(product)}
                       />
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+
+                  {visibleProducts.length >= productLimit ? (
+                    <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-bold text-primary">
+                      Search by name, product code, or barcode to narrow a large
+                      catalog without slowing the counter.
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-8 text-center">
                   <PackageCheck className="mx-auto h-8 w-8 text-muted-foreground" />
@@ -527,6 +519,8 @@ export function PosView({ context }: PosViewProps) {
             </section>
 
             {lastSale ? <ReceiptSummary result={lastSale} /> : null}
+
+            <RecentSalesCard sales={recentSales} />
           </section>
 
           <form
@@ -558,13 +552,11 @@ export function PosView({ context }: PosViewProps) {
 
             <PaymentCard
               paymentMethod={paymentMethod}
-              paymentReference={paymentReference}
               saleNotes={saleNotes}
               totalCents={subtotalCents}
               isConfirming={isConfirming}
               isDisabled={!cart.length || hasOversoldLine}
               onPaymentMethodChange={setPaymentMethod}
-              onPaymentReferenceChange={setPaymentReference}
               onSaleNotesChange={setSaleNotes}
             />
           </form>
@@ -579,20 +571,25 @@ function ProductSaleCard({
   availableQuantity,
   onAdd,
 }: {
-  product: CatalogItem;
+  product: PosProduct;
   availableQuantity: number;
   onAdd: () => void;
 }) {
   const isAvailable = availableQuantity > 0;
 
   return (
-    <article className="rounded-3xl border border-border bg-background p-4">
+    <article className="min-w-0 rounded-3xl border border-border bg-background p-4 transition hover:border-primary/35 hover:shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="break-words text-base font-black">{product.name}</h3>
           {product.sku ? (
             <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
               {product.sku}
+            </p>
+          ) : null}
+          {product.soldQuantity30Days > 0 ? (
+            <p className="mt-2 text-xs font-bold text-primary">
+              Sold {product.soldQuantity30Days.toLocaleString()} in 30 days
             </p>
           ) : null}
         </div>
@@ -606,10 +603,7 @@ function ProductSaleCard({
           label="Available"
           value={availableQuantity.toLocaleString()}
         />
-        <MiniMetric
-          label="Price"
-          value={money(product.sellingPriceCents || 0)}
-        />
+        <MiniMetric label="Price" value={money(product.sellingPriceCents)} />
       </div>
 
       <button
@@ -619,7 +613,7 @@ function ProductSaleCard({
         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Plus className="h-4 w-4" />
-        Add to sale
+        {isAvailable ? "Add to sale" : "No stock here"}
       </button>
     </article>
   );
@@ -859,23 +853,19 @@ function CustomerCard({
 
 function PaymentCard({
   paymentMethod,
-  paymentReference,
   saleNotes,
   totalCents,
   isConfirming,
   isDisabled,
   onPaymentMethodChange,
-  onPaymentReferenceChange,
   onSaleNotesChange,
 }: {
   paymentMethod: SalePaymentMethod;
-  paymentReference: string;
   saleNotes: string;
   totalCents: number;
   isConfirming: boolean;
   isDisabled: boolean;
   onPaymentMethodChange: (value: SalePaymentMethod) => void;
-  onPaymentReferenceChange: (value: string) => void;
   onSaleNotesChange: (value: string) => void;
 }) {
   return (
@@ -884,38 +874,49 @@ function PaymentCard({
         <div>
           <h2 className="text-lg font-black">Payment</h2>
           <p className="mt-1 text-sm font-semibold text-muted-foreground">
-            Full payment is recorded for this first POS version.
+            Choose how the customer paid. Rurix uses the receipt number as the
+            sale reference automatically.
           </p>
         </div>
         <CreditCard className="h-6 w-6 text-primary" />
       </div>
 
       <div className="mt-4 grid gap-3">
-        <label className="block">
+        <div>
           <span className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
             Payment method
           </span>
-          <select
-            value={paymentMethod}
-            onChange={(event) =>
-              onPaymentMethodChange(event.target.value as SalePaymentMethod)
-            }
-            className="mt-2 w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm font-bold outline-none focus:border-primary"
-          >
-            {PAYMENT_METHODS.map((method) => (
-              <option key={method.value} value={method.value}>
-                {method.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {PAYMENT_METHODS.map((method) => {
+              const isActive = method.value === paymentMethod;
 
-        <InputField
-          label="Payment reference"
-          value={paymentReference}
-          onChange={onPaymentReferenceChange}
-          placeholder="Example: MoMo transaction, bank reference, or cash note"
-        />
+              return (
+                <button
+                  key={method.value}
+                  type="button"
+                  onClick={() => onPaymentMethodChange(method.value)}
+                  className={[
+                    "rounded-2xl border px-3 py-3 text-sm font-black transition",
+                    isActive
+                      ? "border-primary bg-primary text-primary-foreground shadow-soft"
+                      : "border-border bg-background text-foreground hover:border-primary/50",
+                  ].join(" ")}
+                >
+                  {method.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-border bg-background p-4">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
+            Payment reference
+          </p>
+          <p className="mt-2 text-sm font-bold leading-6 text-foreground">
+            Created automatically after confirmation using the receipt number.
+          </p>
+        </div>
 
         <TextAreaField
           label="Sale note"
@@ -1008,7 +1009,7 @@ function ReceiptSummary({ result }: { result: SaleDetailResponse }) {
 
 function PosSkeleton() {
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
       <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, index) => (
           <div
@@ -1019,6 +1020,63 @@ function PosSkeleton() {
       </div>
       <div className="h-[620px] animate-pulse rounded-section border border-border bg-surface" />
     </div>
+  );
+}
+
+function RecentSalesCard({ sales }: { sales: SaleSummary[] }) {
+  return (
+    <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black">Recent sales</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+            Latest sales for the selected selling location.
+          </p>
+        </div>
+        <StatusBadge variant="primary">
+          {sales.length.toLocaleString()} shown
+        </StatusBadge>
+      </div>
+
+      {sales.length ? (
+        <div className="mt-4 grid gap-3">
+          {sales.map((sale) => (
+            <article
+              key={sale.id}
+              className="rounded-3xl border border-border bg-background p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black">
+                    {sale.receiptNumber || sale.saleNumber}
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-muted-foreground">
+                    {sale.customerName || "Walk-in customer"}
+                  </p>
+                </div>
+                <p className="text-sm font-black">{money(sale.totalCents)}</p>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <MiniMetric
+                  label="Products"
+                  value={sale.itemCount.toLocaleString()}
+                />
+                <MiniMetric label="Paid" value={money(sale.paidCents)} />
+                <MiniMetric label="Location" value={sale.branchName} />
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-6 text-center">
+          <ReceiptText className="mx-auto h-7 w-7 text-muted-foreground" />
+          <h3 className="mt-3 text-base font-black">No sales here yet</h3>
+          <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
+            Completed sales for this location will appear here.
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
 
