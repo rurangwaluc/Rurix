@@ -10,6 +10,7 @@ import {
   ReceiptText,
   RefreshCw,
   Search,
+  X,
   ShieldAlert,
   ShoppingCart,
   Trash2,
@@ -19,6 +20,7 @@ import {
 import { type CurrentUserResponse } from "../../lib/api";
 import {
   createSale,
+  getSale,
   listCustomers,
   listPosProducts,
   listSales,
@@ -82,7 +84,14 @@ export function PosView({ context }: PosViewProps) {
   const [saleNotes, setSaleNotes] = useState("");
 
   const [lastSale, setLastSale] = useState<SaleDetailResponse | null>(null);
+  const [selectedSale, setSelectedSale] = useState<SaleDetailResponse | null>(
+    null,
+  );
+  const [selectedSaleSummary, setSelectedSaleSummary] =
+    useState<SaleSummary | null>(null);
+  const [selectedSaleId, setSelectedSaleId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSaleDetail, setIsLoadingSaleDetail] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -260,6 +269,34 @@ export function PosView({ context }: PosViewProps) {
     setNewCustomerEmail("");
     setPaymentMethod("cash");
     setSaleNotes("");
+  }
+
+  async function openSaleDetail(sale: SaleSummary) {
+    setError("");
+    setSelectedSaleId(sale.id);
+    setSelectedSaleSummary(sale);
+    setSelectedSale(null);
+    setIsLoadingSaleDetail(true);
+
+    try {
+      const result = await getSale(sale.id);
+      setSelectedSale(result);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not load sale details.",
+      );
+    } finally {
+      setIsLoadingSaleDetail(false);
+    }
+  }
+
+  function closeSaleDetail() {
+    setSelectedSaleId("");
+    setSelectedSaleSummary(null);
+    setSelectedSale(null);
+    setIsLoadingSaleDetail(false);
   }
 
   async function handleConfirmSale(event: FormEvent<HTMLFormElement>) {
@@ -520,7 +557,10 @@ export function PosView({ context }: PosViewProps) {
 
             {lastSale ? <ReceiptSummary result={lastSale} /> : null}
 
-            <RecentSalesCard sales={recentSales} />
+            <RecentSalesCard
+              sales={recentSales}
+              onOpenSale={(sale) => void openSaleDetail(sale)}
+            />
           </section>
 
           <form
@@ -561,6 +601,14 @@ export function PosView({ context }: PosViewProps) {
             />
           </form>
         </section>
+      ) : null}
+      {selectedSaleId ? (
+        <SaleDetailDrawer
+          detail={selectedSale}
+          summary={selectedSaleSummary}
+          isLoading={isLoadingSaleDetail}
+          onClose={closeSaleDetail}
+        />
       ) : null}
     </section>
   );
@@ -1023,14 +1071,21 @@ function PosSkeleton() {
   );
 }
 
-function RecentSalesCard({ sales }: { sales: SaleSummary[] }) {
+function RecentSalesCard({
+  sales,
+  onOpenSale,
+}: {
+  sales: SaleSummary[];
+  onOpenSale: (sale: SaleSummary) => void;
+}) {
   return (
     <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black">Recent sales</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-            Latest sales for the selected selling location.
+            Latest sales for the selected selling location. Open any sale to
+            review the full receipt trail.
           </p>
         </div>
         <StatusBadge variant="primary">
@@ -1041,20 +1096,27 @@ function RecentSalesCard({ sales }: { sales: SaleSummary[] }) {
       {sales.length ? (
         <div className="mt-4 grid gap-3">
           {sales.map((sale) => (
-            <article
+            <button
               key={sale.id}
-              className="rounded-3xl border border-border bg-background p-4"
+              type="button"
+              onClick={() => onOpenSale(sale)}
+              className="w-full rounded-3xl border border-border bg-background p-4 text-left transition hover:border-primary/40 hover:shadow-soft"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-black">
                     {sale.receiptNumber || sale.saleNumber}
                   </p>
                   <p className="mt-1 text-xs font-bold text-muted-foreground">
                     {sale.customerName || "Walk-in customer"}
                   </p>
                 </div>
-                <p className="text-sm font-black">{money(sale.totalCents)}</p>
+                <div className="text-right">
+                  <p className="text-sm font-black">{money(sale.totalCents)}</p>
+                  <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+                    View details
+                  </p>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <MiniMetric
@@ -1064,7 +1126,7 @@ function RecentSalesCard({ sales }: { sales: SaleSummary[] }) {
                 <MiniMetric label="Paid" value={money(sale.paidCents)} />
                 <MiniMetric label="Location" value={sale.branchName} />
               </div>
-            </article>
+            </button>
           ))}
         </div>
       ) : (
@@ -1077,6 +1139,234 @@ function RecentSalesCard({ sales }: { sales: SaleSummary[] }) {
         </div>
       )}
     </section>
+  );
+}
+
+function SaleDetailDrawer({
+  detail,
+  summary,
+  isLoading,
+  onClose,
+}: {
+  detail: SaleDetailResponse | null;
+  summary: SaleSummary | null;
+  isLoading: boolean;
+  onClose: () => void;
+}) {
+  const receiptNumber =
+    detail?.sale.receiptNumber ||
+    detail?.receipt?.receiptNumber ||
+    summary?.receiptNumber ||
+    summary?.saleNumber ||
+    "Sale details";
+
+  const saleNumber = detail?.sale.saleNumber || summary?.saleNumber || "Loading";
+  const customerName =
+    detail?.sale.customerName || summary?.customerName || "Walk-in customer";
+  const branchName = detail?.sale.branchName || summary?.branchName || "Selling location";
+  const totalCents = detail?.sale.totalCents ?? summary?.totalCents ?? 0;
+  const paidCents = detail?.sale.paidCents ?? summary?.paidCents ?? 0;
+  const balanceCents = detail?.sale.balanceCents ?? 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-2 backdrop-blur-sm sm:p-4">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        aria-label="Close sale details"
+        onClick={onClose}
+      />
+
+      <aside className="rurix-scrollbar relative flex h-full w-full max-w-xl flex-col overflow-y-auto rounded-[1.4rem] border border-border bg-background shadow-card">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-xl">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black">{receiptNumber}</p>
+            <p className="mt-0.5 truncate text-xs font-bold text-muted-foreground">
+              {customerName} · {money(totalCents)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-2xl border border-border bg-surface p-2 text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+            aria-label="Close sale details"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-4 sm:p-5">
+          <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <StatusBadge variant={balanceCents === 0 ? "success" : "warning"}>
+                  {balanceCents === 0 ? "Fully paid" : "Balance due"}
+                </StatusBadge>
+                <h2 className="mt-3 break-words text-xl font-black">
+                  {saleNumber}
+                </h2>
+              </div>
+              {isLoading ? (
+                <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-2 text-xs font-black text-primary">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+                  Loading
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <DetailRow label="Receipt" value={receiptNumber} />
+              <DetailRow label="Selling location" value={branchName} />
+              <DetailRow label="Customer" value={customerName} />
+              <DetailRow
+                label="Handled by"
+                value={detail?.sale.createdByName || "Not shown yet"}
+              />
+              <DetailRow
+                label="Completed"
+                value={
+                  detail?.sale.completedAt
+                    ? formatDateTime(detail.sale.completedAt)
+                    : "Loading"
+                }
+              />
+              <DetailRow label="Total" value={money(totalCents)} />
+            </div>
+          </section>
+
+          {!detail ? <SaleDetailSkeleton /> : null}
+
+          {detail ? (
+            <>
+              <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-black">Products sold</h3>
+                    <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                      Products that reduced stock on this sale.
+                    </p>
+                  </div>
+                  <StatusBadge variant="primary">
+                    {detail.items.length.toLocaleString()} products
+                  </StatusBadge>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  {detail.items.map((item) => (
+                    <article
+                      key={item.id}
+                      className="rounded-3xl border border-border bg-background p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-black">
+                            {item.itemName}
+                          </p>
+                          {item.itemSku ? (
+                            <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+                              {item.itemSku}
+                            </p>
+                          ) : null}
+                        </div>
+                        <p className="text-sm font-black">
+                          {money(item.lineTotalCents)}
+                        </p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        <MiniMetric
+                          label="Quantity"
+                          value={item.quantity.toLocaleString()}
+                        />
+                        <MiniMetric
+                          label="Unit price"
+                          value={money(item.unitPriceCents)}
+                        />
+                        <MiniMetric
+                          label="Line total"
+                          value={money(item.lineTotalCents)}
+                        />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-black">Payment</h3>
+                    <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                      Payment record saved with this receipt.
+                    </p>
+                  </div>
+                  <StatusBadge
+                    variant={detail.sale.balanceCents === 0 ? "success" : "warning"}
+                  >
+                    {detail.sale.balanceCents === 0 ? "Fully paid" : "Balance due"}
+                  </StatusBadge>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <DetailRow label="Total" value={money(detail.sale.totalCents)} />
+                  <DetailRow label="Paid" value={money(detail.sale.paidCents)} />
+                  <DetailRow
+                    label="Balance"
+                    value={money(detail.sale.balanceCents)}
+                  />
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  {detail.payments.map((payment) => (
+                    <article
+                      key={payment.id}
+                      className="rounded-3xl border border-border bg-background p-4"
+                    >
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <MiniMetric
+                          label="Method"
+                          value={formatPaymentMethod(payment.method)}
+                        />
+                        <MiniMetric
+                          label="Amount"
+                          value={money(payment.amountCents)}
+                        />
+                        <MiniMetric
+                          label="Received by"
+                          value={payment.receivedByName || "Not shown"}
+                        />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </>
+          ) : null}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function SaleDetailSkeleton() {
+  return (
+    <div className="space-y-4">
+      <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
+        <div className="h-4 w-36 animate-pulse rounded-full bg-muted" />
+        <div className="mt-4 grid gap-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-20 animate-pulse rounded-3xl border border-border bg-background"
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
+        <div className="h-4 w-24 animate-pulse rounded-full bg-muted" />
+        <div className="mt-4 h-28 animate-pulse rounded-3xl border border-border bg-background" />
+      </section>
+    </div>
   );
 }
 
@@ -1194,6 +1484,24 @@ function AlertCard({
       {message}
     </div>
   );
+}
+
+function formatPaymentMethod(method: SalePaymentMethod) {
+  const labels: Record<SalePaymentMethod, string> = {
+    cash: "Cash",
+    mobile_money: "Mobile money",
+    bank_transfer: "Bank transfer",
+    card: "Card",
+  };
+
+  return labels[method];
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function money(value: number) {
