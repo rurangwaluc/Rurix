@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
+  Banknote,
   CreditCard,
-  MapPin,
   Minus,
   PackageCheck,
   Plus,
@@ -18,6 +18,12 @@ import {
 } from "lucide-react";
 
 import { type CurrentUserResponse } from "../../lib/api";
+import {
+  closeCashDrawer,
+  getCurrentCashDrawer,
+  openCashDrawer,
+  type CashDrawerSession,
+} from "../../lib/cash-drawer-api";
 import {
   createSale,
   getSale,
@@ -82,6 +88,16 @@ export function PosView({ context }: PosViewProps) {
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<SalePaymentMethod>("cash");
   const [saleNotes, setSaleNotes] = useState("");
+
+  const [cashDrawerSession, setCashDrawerSession] =
+    useState<CashDrawerSession | null>(null);
+  const [isLoadingCashDrawer, setIsLoadingCashDrawer] = useState(true);
+  const [isOpeningCashDrawer, setIsOpeningCashDrawer] = useState(false);
+  const [isClosingCashDrawer, setIsClosingCashDrawer] = useState(false);
+  const [openingCashRwf, setOpeningCashRwf] = useState("");
+  const [openingCashNote, setOpeningCashNote] = useState("");
+  const [countedCashRwf, setCountedCashRwf] = useState("");
+  const [closingCashNote, setClosingCashNote] = useState("");
 
   const [lastSale, setLastSale] = useState<SaleDetailResponse | null>(null);
   const [selectedSale, setSelectedSale] = useState<SaleDetailResponse | null>(
@@ -150,6 +166,138 @@ export function PosView({ context }: PosViewProps) {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBranchId, search]);
+
+  useEffect(() => {
+    void reloadCashDrawer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBranchId]);
+
+  async function reloadCashDrawer() {
+    if (!selectedBranchId) {
+      setCashDrawerSession(null);
+      setIsLoadingCashDrawer(false);
+      return;
+    }
+
+    setIsLoadingCashDrawer(true);
+
+    try {
+      const result = await getCurrentCashDrawer(selectedBranchId);
+      setCashDrawerSession(result.session);
+
+      if (result.session) {
+        setCountedCashRwf(fromCents(result.session.expectedCashCents));
+      } else {
+        setCountedCashRwf("");
+      }
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not load cash drawer.",
+      );
+    } finally {
+      setIsLoadingCashDrawer(false);
+    }
+  }
+
+  async function handleOpenCashDrawer() {
+    if (!selectedBranchId) {
+      setError("Choose a selling location before opening the cash drawer.");
+      return;
+    }
+
+    const openingCashCents = toCents(openingCashRwf);
+
+    if (openingCashCents === null) {
+      setError("Enter the opening cash amount.");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsOpeningCashDrawer(true);
+
+    try {
+      const payload: Parameters<typeof openCashDrawer>[0] = {
+        branchId: selectedBranchId,
+        openingCashCents,
+      };
+
+      const note = openingCashNote.trim();
+
+      if (note) {
+        payload.notes = note;
+      }
+
+      const result = await openCashDrawer(payload);
+
+      setCashDrawerSession(result.session);
+      setCountedCashRwf(fromCents(result.session.expectedCashCents));
+      setOpeningCashRwf("");
+      setOpeningCashNote("");
+      setSuccess("Cash drawer opened for this selling location.");
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not open cash drawer.",
+      );
+    } finally {
+      setIsOpeningCashDrawer(false);
+    }
+  }
+
+  async function handleCloseCashDrawer() {
+    if (!selectedBranchId) {
+      setError("Choose a selling location before closing the cash drawer.");
+      return;
+    }
+
+    const countedCashCents = toCents(countedCashRwf);
+
+    if (countedCashCents === null) {
+      setError("Enter the counted cash amount.");
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsClosingCashDrawer(true);
+
+    try {
+      const payload: Parameters<typeof closeCashDrawer>[0] = {
+        branchId: selectedBranchId,
+        countedCashCents,
+      };
+
+      const note = closingCashNote.trim();
+
+      if (note) {
+        payload.notes = note;
+      }
+
+      const result = await closeCashDrawer(payload);
+
+      setCashDrawerSession(null);
+      setCountedCashRwf("");
+      setClosingCashNote("");
+      setSuccess(
+        `Cash drawer closed. Difference: ${money(
+          result.session.differenceCents || 0,
+        )}.`,
+      );
+      await reloadPos();
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not close cash drawer.",
+      );
+    } finally {
+      setIsClosingCashDrawer(false);
+    }
+  }
 
   async function reloadPos() {
     setIsLoading(true);
@@ -388,7 +536,7 @@ export function PosView({ context }: PosViewProps) {
         `Sale completed. Receipt ${result.sale.receiptNumber || "created"}.`,
       );
       resetSale();
-      await reloadPos();
+      await Promise.all([reloadPos(), reloadCashDrawer()]);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -444,6 +592,10 @@ export function PosView({ context }: PosViewProps) {
               <SummaryCard
                 label="Products shown"
                 value={visibleProducts.length}
+              />
+              <SummaryCard
+                label="Cash drawer"
+                value={cashDrawerSession ? "Open" : "Closed"}
               />
               <SummaryCard label="Sale total" value={money(subtotalCents)} />
             </div>
@@ -594,10 +746,32 @@ export function PosView({ context }: PosViewProps) {
               paymentMethod={paymentMethod}
               saleNotes={saleNotes}
               totalCents={subtotalCents}
+              cashDrawerSession={cashDrawerSession}
+              selectedBranchName={
+                selectedBranch?.name || "this selling location"
+              }
+              isLoadingCashDrawer={isLoadingCashDrawer}
+              isOpeningCashDrawer={isOpeningCashDrawer}
+              isClosingCashDrawer={isClosingCashDrawer}
+              openingCashRwf={openingCashRwf}
+              openingCashNote={openingCashNote}
+              countedCashRwf={countedCashRwf}
+              closingCashNote={closingCashNote}
               isConfirming={isConfirming}
-              isDisabled={!cart.length || hasOversoldLine}
+              isDisabled={
+                !cart.length ||
+                hasOversoldLine ||
+                (paymentMethod === "cash" && !cashDrawerSession)
+              }
               onPaymentMethodChange={setPaymentMethod}
               onSaleNotesChange={setSaleNotes}
+              onOpeningCashRwfChange={setOpeningCashRwf}
+              onOpeningCashNoteChange={setOpeningCashNote}
+              onCountedCashRwfChange={setCountedCashRwf}
+              onClosingCashNoteChange={setClosingCashNote}
+              onOpenCashDrawer={() => void handleOpenCashDrawer()}
+              onCloseCashDrawer={() => void handleCloseCashDrawer()}
+              onRefreshCashDrawer={() => void reloadCashDrawer()}
             />
           </form>
         </section>
@@ -903,18 +1077,50 @@ function PaymentCard({
   paymentMethod,
   saleNotes,
   totalCents,
+  cashDrawerSession,
+  selectedBranchName,
+  isLoadingCashDrawer,
+  isOpeningCashDrawer,
+  isClosingCashDrawer,
+  openingCashRwf,
+  openingCashNote,
+  countedCashRwf,
+  closingCashNote,
   isConfirming,
   isDisabled,
   onPaymentMethodChange,
   onSaleNotesChange,
+  onOpeningCashRwfChange,
+  onOpeningCashNoteChange,
+  onCountedCashRwfChange,
+  onClosingCashNoteChange,
+  onOpenCashDrawer,
+  onCloseCashDrawer,
+  onRefreshCashDrawer,
 }: {
   paymentMethod: SalePaymentMethod;
   saleNotes: string;
   totalCents: number;
+  cashDrawerSession: CashDrawerSession | null;
+  selectedBranchName: string;
+  isLoadingCashDrawer: boolean;
+  isOpeningCashDrawer: boolean;
+  isClosingCashDrawer: boolean;
+  openingCashRwf: string;
+  openingCashNote: string;
+  countedCashRwf: string;
+  closingCashNote: string;
   isConfirming: boolean;
   isDisabled: boolean;
   onPaymentMethodChange: (value: SalePaymentMethod) => void;
   onSaleNotesChange: (value: string) => void;
+  onOpeningCashRwfChange: (value: string) => void;
+  onOpeningCashNoteChange: (value: string) => void;
+  onCountedCashRwfChange: (value: string) => void;
+  onClosingCashNoteChange: (value: string) => void;
+  onOpenCashDrawer: () => void;
+  onCloseCashDrawer: () => void;
+  onRefreshCashDrawer: () => void;
 }) {
   return (
     <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
@@ -966,6 +1172,26 @@ function PaymentCard({
           </p>
         </div>
 
+        <CashDrawerPaymentPanel
+          paymentMethod={paymentMethod}
+          session={cashDrawerSession}
+          selectedBranchName={selectedBranchName}
+          isLoading={isLoadingCashDrawer}
+          isOpening={isOpeningCashDrawer}
+          isClosing={isClosingCashDrawer}
+          openingCashRwf={openingCashRwf}
+          openingCashNote={openingCashNote}
+          countedCashRwf={countedCashRwf}
+          closingCashNote={closingCashNote}
+          onOpeningCashRwfChange={onOpeningCashRwfChange}
+          onOpeningCashNoteChange={onOpeningCashNoteChange}
+          onCountedCashRwfChange={onCountedCashRwfChange}
+          onClosingCashNoteChange={onClosingCashNoteChange}
+          onOpenCashDrawer={onOpenCashDrawer}
+          onCloseCashDrawer={onCloseCashDrawer}
+          onRefreshCashDrawer={onRefreshCashDrawer}
+        />
+
         <TextAreaField
           label="Sale note"
           value={saleNotes}
@@ -992,6 +1218,218 @@ function PaymentCard({
           )}
           {isConfirming ? "Completing sale..." : "Confirm sale"}
         </button>
+      </div>
+    </section>
+  );
+}
+
+function CashDrawerPaymentPanel({
+  paymentMethod,
+  session,
+  selectedBranchName,
+  isLoading,
+  isOpening,
+  isClosing,
+  openingCashRwf,
+  openingCashNote,
+  countedCashRwf,
+  closingCashNote,
+  onOpeningCashRwfChange,
+  onOpeningCashNoteChange,
+  onCountedCashRwfChange,
+  onClosingCashNoteChange,
+  onOpenCashDrawer,
+  onCloseCashDrawer,
+  onRefreshCashDrawer,
+}: {
+  paymentMethod: SalePaymentMethod;
+  session: CashDrawerSession | null;
+  selectedBranchName: string;
+  isLoading: boolean;
+  isOpening: boolean;
+  isClosing: boolean;
+  openingCashRwf: string;
+  openingCashNote: string;
+  countedCashRwf: string;
+  closingCashNote: string;
+  onOpeningCashRwfChange: (value: string) => void;
+  onOpeningCashNoteChange: (value: string) => void;
+  onCountedCashRwfChange: (value: string) => void;
+  onClosingCashNoteChange: (value: string) => void;
+  onOpenCashDrawer: () => void;
+  onCloseCashDrawer: () => void;
+  onRefreshCashDrawer: () => void;
+}) {
+  if (paymentMethod !== "cash") {
+    return (
+      <section className="rounded-3xl border border-border bg-background p-4">
+        <div className="flex items-start gap-3">
+          <Banknote className="mt-0.5 h-5 w-5 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-black">Cash drawer not used</p>
+            <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+              This payment method does not touch the cash drawer. The sale can
+              continue even when the drawer is closed.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <section className="rounded-3xl border border-border bg-background p-4">
+        <div className="flex items-center gap-3">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+          <p className="text-sm font-black">Checking cash drawer...</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!session) {
+    return (
+      <section className="rounded-3xl border border-warning/25 bg-warning/10 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <StatusBadge variant="warning">Cash drawer closed</StatusBadge>
+            <h3 className="mt-3 text-base font-black text-warning">
+              Open drawer before taking cash
+            </h3>
+            <p className="mt-1 text-sm font-semibold leading-6 text-warning">
+              Cash sales are blocked until a drawer is opened for{" "}
+              {selectedBranchName}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onRefreshCashDrawer}
+            className="rounded-2xl border border-warning/30 bg-background px-3 py-2 text-xs font-black text-warning"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          <InputField
+            label="Opening cash"
+            value={openingCashRwf}
+            onChange={onOpeningCashRwfChange}
+            type="number"
+            placeholder="Example: 50000"
+          />
+          <TextAreaField
+            label="Opening note"
+            value={openingCashNote}
+            onChange={onOpeningCashNoteChange}
+            placeholder="Optional note"
+          />
+          <button
+            type="button"
+            onClick={onOpenCashDrawer}
+            disabled={isOpening}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-warning px-4 py-3 text-sm font-black text-warning-foreground shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isOpening ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-warning-foreground/30 border-t-warning-foreground" />
+            ) : (
+              <Banknote className="h-4 w-4" />
+            )}
+            {isOpening ? "Opening drawer..." : "Open cash drawer"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const differencePreview =
+    toCents(countedCashRwf) === null
+      ? null
+      : (toCents(countedCashRwf) || 0) - session.expectedCashCents;
+
+  return (
+    <section className="rounded-3xl border border-success/25 bg-success/10 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <StatusBadge variant="success">Cash drawer open</StatusBadge>
+          <h3 className="mt-3 text-base font-black text-success">
+            Cash sales can continue
+          </h3>
+          <p className="mt-1 text-sm font-semibold leading-6 text-success">
+            Cash collected will be added to this drawer automatically.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefreshCashDrawer}
+          className="rounded-2xl border border-success/30 bg-background px-3 py-2 text-xs font-black text-success"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <MiniMetric
+          label="Opening cash"
+          value={money(session.openingCashCents)}
+        />
+        <MiniMetric
+          label="Expected cash"
+          value={money(session.expectedCashCents)}
+        />
+        <MiniMetric
+          label="Opened by"
+          value={session.openedByName || "Not shown"}
+        />
+        <MiniMetric label="Location" value={session.branchName} />
+      </div>
+
+      <div className="mt-4 rounded-3xl border border-border bg-background p-4">
+        <div className="flex items-start gap-3">
+          <Banknote className="mt-0.5 h-5 w-5 text-primary" />
+          <div>
+            <p className="text-sm font-black">Close drawer</p>
+            <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+              Close only after counting the physical cash in the drawer.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          <InputField
+            label="Counted cash"
+            value={countedCashRwf}
+            onChange={onCountedCashRwfChange}
+            type="number"
+            placeholder="Physical cash counted"
+          />
+          {differencePreview !== null ? (
+            <DetailRow
+              label="Difference preview"
+              value={money(differencePreview)}
+            />
+          ) : null}
+          <TextAreaField
+            label="Closing note"
+            value={closingCashNote}
+            onChange={onClosingCashNoteChange}
+            placeholder="Optional note"
+          />
+          <button
+            type="button"
+            onClick={onCloseCashDrawer}
+            disabled={isClosing}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-sm font-black text-foreground shadow-soft transition hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isClosing ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+            ) : (
+              <Banknote className="h-4 w-4" />
+            )}
+            {isClosing ? "Closing drawer..." : "Close cash drawer"}
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -1160,10 +1598,12 @@ function SaleDetailDrawer({
     summary?.saleNumber ||
     "Sale details";
 
-  const saleNumber = detail?.sale.saleNumber || summary?.saleNumber || "Loading";
+  const saleNumber =
+    detail?.sale.saleNumber || summary?.saleNumber || "Loading";
   const customerName =
     detail?.sale.customerName || summary?.customerName || "Walk-in customer";
-  const branchName = detail?.sale.branchName || summary?.branchName || "Selling location";
+  const branchName =
+    detail?.sale.branchName || summary?.branchName || "Selling location";
   const totalCents = detail?.sale.totalCents ?? summary?.totalCents ?? 0;
   const paidCents = detail?.sale.paidCents ?? summary?.paidCents ?? 0;
   const balanceCents = detail?.sale.balanceCents ?? 0;
@@ -1199,7 +1639,9 @@ function SaleDetailDrawer({
           <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <StatusBadge variant={balanceCents === 0 ? "success" : "warning"}>
+                <StatusBadge
+                  variant={balanceCents === 0 ? "success" : "warning"}
+                >
                   {balanceCents === 0 ? "Fully paid" : "Balance due"}
                 </StatusBadge>
                 <h2 className="mt-3 break-words text-xl font-black">
@@ -1300,15 +1742,25 @@ function SaleDetailDrawer({
                     </p>
                   </div>
                   <StatusBadge
-                    variant={detail.sale.balanceCents === 0 ? "success" : "warning"}
+                    variant={
+                      detail.sale.balanceCents === 0 ? "success" : "warning"
+                    }
                   >
-                    {detail.sale.balanceCents === 0 ? "Fully paid" : "Balance due"}
+                    {detail.sale.balanceCents === 0
+                      ? "Fully paid"
+                      : "Balance due"}
                   </StatusBadge>
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <DetailRow label="Total" value={money(detail.sale.totalCents)} />
-                  <DetailRow label="Paid" value={money(detail.sale.paidCents)} />
+                  <DetailRow
+                    label="Total"
+                    value={money(detail.sale.totalCents)}
+                  />
+                  <DetailRow
+                    label="Paid"
+                    value={money(detail.sale.paidCents)}
+                  />
                   <DetailRow
                     label="Balance"
                     value={money(detail.sale.balanceCents)}
@@ -1502,6 +1954,20 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function toCents(value: string) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    return null;
+  }
+
+  return Math.round(numberValue * 100);
+}
+
+function fromCents(value: number) {
+  return String(Math.round(value / 100));
 }
 
 function money(value: number) {

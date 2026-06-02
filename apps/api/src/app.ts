@@ -3,6 +3,7 @@ import { env, isProduction } from "@rurix/config";
 
 import Fastify from "fastify";
 import { authRoutes } from "./modules/auth/auth.routes";
+import { cashDrawerRoutes } from "./modules/cash-drawer/cash-drawer.routes";
 import { catalogRoutes } from "./modules/catalog/catalog.routes";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
@@ -75,6 +76,10 @@ export async function createApp() {
 
   await app.register(customerRoutes, {
     prefix: "/customers",
+  });
+
+  await app.register(cashDrawerRoutes, {
+    prefix: "/cash-drawer",
   });
 
   await app.register(locationsRoutes, {
