@@ -2,14 +2,12 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  Banknote,
   CreditCard,
   Minus,
   PackageCheck,
   Plus,
   ReceiptText,
   RefreshCw,
-  RotateCcw,
   Search,
   ShieldAlert,
   ShoppingCart,
@@ -19,12 +17,7 @@ import {
 } from "lucide-react";
 
 import { type CurrentUserResponse } from "../../lib/api";
-import {
-  closeCashDrawer,
-  getCurrentCashDrawer,
-  openCashDrawer,
-  type CashDrawerSession,
-} from "../../lib/cash-drawer-api";
+import { type CashDrawerSession } from "../../lib/cash-drawer-api";
 import {
   createSale,
   getSale,
@@ -38,6 +31,7 @@ import {
   type SalePaymentMethod,
   type SaleSummary,
 } from "../../lib/sales-api";
+import { CashDrawerPanel } from "./cash-drawer-panel";
 import { StatusBadge } from "../status-badge";
 
 type PosViewProps = {
@@ -54,6 +48,11 @@ type CartLine = {
 };
 
 type CustomerMode = "walk_in" | "existing" | "new";
+
+const DEFAULT_PRODUCT_LIMIT = 12;
+const SEARCH_PRODUCT_LIMIT = 20;
+const DEFAULT_SALES_VISIBLE_COUNT = 5;
+const SALES_PAGE_SIZE = 5;
 
 const PAYMENT_METHODS: Array<{
   value: SalePaymentMethod;
@@ -85,8 +84,13 @@ export function PosView({ context }: PosViewProps) {
 
   const [selectedBranchId, setSelectedBranchId] = useState(defaultBranchId);
   const [search, setSearch] = useState("");
+  const [saleSearch, setSaleSearch] = useState("");
+  const [visibleSalesCount, setVisibleSalesCount] = useState(
+    DEFAULT_SALES_VISIBLE_COUNT,
+  );
+
   const [products, setProducts] = useState<PosProduct[]>([]);
-  const [recentSales, setRecentSales] = useState<SaleSummary[]>([]);
+  const [sales, setSales] = useState<SaleSummary[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -101,17 +105,6 @@ export function PosView({ context }: PosViewProps) {
 
   const [cashDrawerSession, setCashDrawerSession] =
     useState<CashDrawerSession | null>(null);
-  const [cashDrawerBusinessDay, setCashDrawerBusinessDay] = useState("");
-  const [isLoadingCashDrawer, setIsLoadingCashDrawer] = useState(true);
-  const [isOpeningCashDrawer, setIsOpeningCashDrawer] = useState(false);
-  const [isClosingCashDrawer, setIsClosingCashDrawer] = useState(false);
-  const [openingCashRwf, setOpeningCashRwf] = useState("");
-  const [openingCashNote, setOpeningCashNote] = useState("");
-  const [countedCashRwf, setCountedCashRwf] = useState("");
-  const [closingCashNote, setClosingCashNote] = useState("");
-  const [differenceReason, setDifferenceReason] = useState("");
-  const [ownerOverride, setOwnerOverride] = useState(false);
-  const [reopenReason, setReopenReason] = useState("");
 
   const [lastSale, setLastSale] = useState<SaleDetailResponse | null>(null);
   const [selectedSale, setSelectedSale] = useState<SaleDetailResponse | null>(
@@ -120,24 +113,16 @@ export function PosView({ context }: PosViewProps) {
   const [selectedSaleSummary, setSelectedSaleSummary] =
     useState<SaleSummary | null>(null);
   const [selectedSaleId, setSelectedSaleId] = useState("");
+
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingSaleDetail, setIsLoadingSaleDetail] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const productsById = useMemo(() => {
-    const result = new Map<string, PosProduct>();
-
-    for (const product of products) {
-      result.set(product.id, product);
-    }
-
-    return result;
-  }, [products]);
-
-  const productLimit = search.trim() ? 20 : 12;
-  const visibleProducts = products;
+  const productLimit = search.trim()
+    ? SEARCH_PRODUCT_LIMIT
+    : DEFAULT_PRODUCT_LIMIT;
 
   const filteredCustomers = useMemo(() => {
     const searchValue = customerSearch.trim().toLowerCase();
@@ -155,6 +140,29 @@ export function PosView({ context }: PosViewProps) {
       .slice(0, 8);
   }, [customers, customerSearch]);
 
+  const filteredSales = useMemo(() => {
+    const searchValue = saleSearch.trim().toLowerCase();
+
+    if (!searchValue) {
+      return sales;
+    }
+
+    return sales.filter((sale) =>
+      [
+        sale.saleNumber,
+        sale.receiptNumber || "",
+        sale.customerName || "Walk-in customer",
+        sale.branchName,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchValue),
+    );
+  }, [sales, saleSearch]);
+
+  const visibleSales = filteredSales.slice(0, visibleSalesCount);
+  const hasMoreSales = filteredSales.length > visibleSales.length;
+
   const selectedBranch = accessibleBranches.find(
     (branch) => branch.id === selectedBranchId,
   );
@@ -170,8 +178,11 @@ export function PosView({ context }: PosViewProps) {
   );
 
   const isCashDrawerOpen = cashDrawerSession?.status === "open";
-  const isCashDrawerClosedToday = cashDrawerSession?.status === "closed";
   const isCashDrawerBlocked = paymentMethod === "cash" && !isCashDrawerOpen;
+
+  useEffect(() => {
+    setVisibleSalesCount(DEFAULT_SALES_VISIBLE_COUNT);
+  }, [selectedBranchId, saleSearch]);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -184,212 +195,6 @@ export function PosView({ context }: PosViewProps) {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBranchId, search]);
-
-  useEffect(() => {
-    void reloadCashDrawer();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranchId]);
-
-  async function reloadCashDrawer() {
-    if (!selectedBranchId || !canViewCashDrawer) {
-      setCashDrawerSession(null);
-      setCashDrawerBusinessDay("");
-      setIsLoadingCashDrawer(false);
-      return;
-    }
-
-    setIsLoadingCashDrawer(true);
-
-    try {
-      const result = await getCurrentCashDrawer(selectedBranchId);
-      const session = result.session;
-
-      setCashDrawerSession(session);
-      setCashDrawerBusinessDay(result.businessDay);
-
-      if (session?.status === "open") {
-        setCountedCashRwf(fromCents(session.expectedCashCents));
-      } else if (
-        session &&
-        session.countedCashCents !== null &&
-        session.countedCashCents !== undefined
-      ) {
-        setCountedCashRwf(fromCents(session.countedCashCents));
-      } else {
-        setCountedCashRwf("");
-      }
-
-      setOwnerOverride(false);
-      setReopenReason("");
-      setDifferenceReason("");
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Could not load cash drawer.",
-      );
-    } finally {
-      setIsLoadingCashDrawer(false);
-    }
-  }
-
-  async function handleOpenCashDrawer() {
-    if (!selectedBranchId) {
-      setError("Choose a selling location before opening the cash drawer.");
-      return;
-    }
-
-    if (!canOpenCashDrawer) {
-      setError("You do not have access to open the cash drawer.");
-      return;
-    }
-
-    if (isCashDrawerClosedToday && !ownerOverride) {
-      setError(
-        "This drawer is already closed for today. The owner can reopen it with a reason.",
-      );
-      return;
-    }
-
-    if (isCashDrawerClosedToday && ownerOverride && !reopenReason.trim()) {
-      setError("Add a reason before reopening this cash drawer.");
-      return;
-    }
-
-    const openingCashCents = toCents(openingCashRwf || "0");
-
-    if (openingCashCents === null) {
-      setError("Enter a valid opening cash amount.");
-      return;
-    }
-
-    setError("");
-    setSuccess("");
-    setIsOpeningCashDrawer(true);
-
-    try {
-      const payload: Parameters<typeof openCashDrawer>[0] = {
-        branchId: selectedBranchId,
-        openingCashCents,
-      };
-
-      const note = openingCashNote.trim();
-
-      if (note) {
-        payload.note = note;
-      }
-
-      if (ownerOverride) {
-        payload.ownerOverride = true;
-        payload.reopenReason = reopenReason.trim();
-      }
-
-      const result = await openCashDrawer(payload);
-      const openedSession = result.session;
-
-      if (!openedSession) {
-        throw new Error("Cash drawer was not opened. Please try again.");
-      }
-
-      setCashDrawerSession(openedSession);
-      setCountedCashRwf(fromCents(openedSession.expectedCashCents));
-
-      setOpeningCashRwf("");
-      setOpeningCashNote("");
-      setOwnerOverride(false);
-      setReopenReason("");
-      setSuccess(
-        ownerOverride
-          ? "Cash drawer reopened for this selling location."
-          : "Cash drawer opened for this selling location.",
-      );
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Could not open cash drawer.",
-      );
-    } finally {
-      setIsOpeningCashDrawer(false);
-    }
-  }
-
-  async function handleCloseCashDrawer() {
-    if (!selectedBranchId) {
-      setError("Choose a selling location before closing the cash drawer.");
-      return;
-    }
-
-    if (!canCloseCashDrawer) {
-      setError("You do not have access to close the cash drawer.");
-      return;
-    }
-
-    const countedCashCents = toCents(countedCashRwf);
-
-    if (countedCashCents === null) {
-      setError("Enter the counted cash amount.");
-      return;
-    }
-
-    const expectedCashCents = cashDrawerSession?.expectedCashCents || 0;
-    const differenceCents = countedCashCents - expectedCashCents;
-
-    if (differenceCents !== 0 && !differenceReason.trim()) {
-      setError(
-        "Add a reason because the cash counted is different from the expected cash.",
-      );
-      return;
-    }
-
-    setError("");
-    setSuccess("");
-    setIsClosingCashDrawer(true);
-
-    try {
-      const payload: Parameters<typeof closeCashDrawer>[0] = {
-        branchId: selectedBranchId,
-        countedCashCents,
-      };
-
-      const note = closingCashNote.trim();
-      const reason = differenceReason.trim();
-
-      if (note) {
-        payload.note = note;
-      }
-
-      if (reason) {
-        payload.differenceReason = reason;
-      }
-
-      const result = await closeCashDrawer(payload);
-
-      setCashDrawerSession(result.session);
-      setCountedCashRwf(
-        result.session?.countedCashCents !== null &&
-          result.session?.countedCashCents !== undefined
-          ? fromCents(result.session.countedCashCents)
-          : "",
-      );
-      setClosingCashNote("");
-      setDifferenceReason("");
-      setSuccess(
-        `Cash drawer closed. Difference: ${money(
-          result.session?.differenceCents || 0,
-        )}.`,
-      );
-      await reloadPos();
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Could not close cash drawer.",
-      );
-    } finally {
-      setIsClosingCashDrawer(false);
-    }
-  }
 
   async function reloadPos() {
     setIsLoading(true);
@@ -408,7 +213,7 @@ export function PosView({ context }: PosViewProps) {
 
       setProducts(productResult.products);
       setCustomers(customerResult.customers);
-      setRecentSales(salesResult.sales.slice(0, 10));
+      setSales(salesResult.sales);
 
       setCart((current) =>
         current
@@ -635,7 +440,7 @@ export function PosView({ context }: PosViewProps) {
         `Sale completed. Receipt ${result.sale.receiptNumber || "created"}.`,
       );
       resetSale();
-      await Promise.all([reloadPos(), reloadCashDrawer()]);
+      await reloadPos();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -681,17 +486,14 @@ export function PosView({ context }: PosViewProps) {
                 and confirm the sale. Stock reduces only after confirmation.
               </p>
               <p className="mt-2 max-w-2xl text-xs font-bold leading-5 text-muted-foreground">
-                Built for busy counters: search first, show only a focused set,
-                and keep the cart visible on larger screens.
+                Built for busy counters: show 12 products by default, 20 during
+                search, and keep the cart visible on larger screens.
               </p>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[620px] xl:grid-cols-4">
               <SummaryCard label="Cart items" value={cartQuantity} />
-              <SummaryCard
-                label="Products shown"
-                value={visibleProducts.length}
-              />
+              <SummaryCard label="Products shown" value={products.length} />
               <SummaryCard
                 label="Cash drawer"
                 value={isCashDrawerOpen ? "Open" : "Closed"}
@@ -707,7 +509,10 @@ export function PosView({ context }: PosViewProps) {
               </span>
               <select
                 value={selectedBranchId}
-                onChange={(event) => setSelectedBranchId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedBranchId(event.target.value);
+                  setCashDrawerSession(null);
+                }}
                 className="mt-2 w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm font-bold outline-none focus:border-primary"
               >
                 {accessibleBranches.map((branch) => (
@@ -753,63 +558,27 @@ export function PosView({ context }: PosViewProps) {
       {!isLoading ? (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
           <section className="space-y-4">
-            <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-black">Fast product search</h2>
-                  <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-                    Showing up to {productLimit} products for{" "}
-                    {selectedBranch?.name || "the selected location"}. Best
-                    sellers appear first, then recently sold products, then
-                    product name.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge variant="primary">
-                    {visibleProducts.length.toLocaleString()} shown
-                  </StatusBadge>
-                  <StatusBadge variant="warning">Search-first</StatusBadge>
-                </div>
-              </div>
-
-              {visibleProducts.length ? (
-                <>
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-                    {visibleProducts.map((product) => (
-                      <ProductSaleCard
-                        key={product.id}
-                        product={product}
-                        availableQuantity={product.quantityAvailable}
-                        onAdd={() => addProduct(product)}
-                      />
-                    ))}
-                  </div>
-
-                  {visibleProducts.length >= productLimit ? (
-                    <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-bold text-primary">
-                      Search by name, product code, or barcode to narrow a large
-                      catalog without slowing the counter.
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-8 text-center">
-                  <PackageCheck className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <h3 className="mt-3 text-base font-black">
-                    No products found
-                  </h3>
-                  <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-muted-foreground">
-                    Try another product name or check stock in this selling
-                    location.
-                  </p>
-                </div>
-              )}
-            </section>
+            <ProductSearchPanel
+              products={products}
+              productLimit={productLimit}
+              selectedBranchName={
+                selectedBranch?.name || "the selected location"
+              }
+              onAddProduct={addProduct}
+            />
 
             {lastSale ? <ReceiptSummary result={lastSale} /> : null}
 
-            <RecentSalesCard
-              sales={recentSales}
+            <SalesHistoryCard
+              sales={visibleSales}
+              totalSales={filteredSales.length}
+              showing={visibleSales.length}
+              saleSearch={saleSearch}
+              hasMoreSales={hasMoreSales}
+              onSaleSearchChange={setSaleSearch}
+              onLoadMore={() =>
+                setVisibleSalesCount((current) => current + SALES_PAGE_SIZE)
+              }
               onOpenSale={(sale) => void openSaleDetail(sale)}
             />
           </section>
@@ -845,40 +614,18 @@ export function PosView({ context }: PosViewProps) {
               paymentMethod={paymentMethod}
               saleNotes={saleNotes}
               totalCents={subtotalCents}
-              cashDrawerSession={cashDrawerSession}
-              cashDrawerBusinessDay={cashDrawerBusinessDay}
-              selectedBranchName={
-                selectedBranch?.name || "this selling location"
-              }
+              selectedBranchId={selectedBranchId}
               isOwner={isOwner}
+              canViewCashDrawer={canViewCashDrawer}
               canOpenCashDrawer={canOpenCashDrawer}
               canCloseCashDrawer={canCloseCashDrawer}
-              isLoadingCashDrawer={isLoadingCashDrawer}
-              isOpeningCashDrawer={isOpeningCashDrawer}
-              isClosingCashDrawer={isClosingCashDrawer}
-              openingCashRwf={openingCashRwf}
-              openingCashNote={openingCashNote}
-              countedCashRwf={countedCashRwf}
-              closingCashNote={closingCashNote}
-              differenceReason={differenceReason}
-              ownerOverride={ownerOverride}
-              reopenReason={reopenReason}
               isConfirming={isConfirming}
               isDisabled={
                 !cart.length || hasOversoldLine || isCashDrawerBlocked
               }
               onPaymentMethodChange={setPaymentMethod}
               onSaleNotesChange={setSaleNotes}
-              onOpeningCashRwfChange={setOpeningCashRwf}
-              onOpeningCashNoteChange={setOpeningCashNote}
-              onCountedCashRwfChange={setCountedCashRwf}
-              onClosingCashNoteChange={setClosingCashNote}
-              onDifferenceReasonChange={setDifferenceReason}
-              onOwnerOverrideChange={setOwnerOverride}
-              onReopenReasonChange={setReopenReason}
-              onOpenCashDrawer={() => void handleOpenCashDrawer()}
-              onCloseCashDrawer={() => void handleCloseCashDrawer()}
-              onRefreshCashDrawer={() => void reloadCashDrawer()}
+              onDrawerChanged={setCashDrawerSession}
             />
           </form>
         </section>
@@ -892,6 +639,69 @@ export function PosView({ context }: PosViewProps) {
           onClose={closeSaleDetail}
         />
       ) : null}
+    </section>
+  );
+}
+
+function ProductSearchPanel({
+  products,
+  productLimit,
+  selectedBranchName,
+  onAddProduct,
+}: {
+  products: PosProduct[];
+  productLimit: number;
+  selectedBranchName: string;
+  onAddProduct: (product: PosProduct) => void;
+}) {
+  return (
+    <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black">Fast product search</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+            Showing up to {productLimit} products for {selectedBranchName}. Best
+            sellers appear first, then recently sold products, then product
+            name.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge variant="primary">
+            {products.length.toLocaleString()} shown
+          </StatusBadge>
+          <StatusBadge variant="warning">Search-first</StatusBadge>
+        </div>
+      </div>
+
+      {products.length ? (
+        <>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+            {products.map((product) => (
+              <ProductSaleCard
+                key={product.id}
+                product={product}
+                availableQuantity={product.quantityAvailable}
+                onAdd={() => onAddProduct(product)}
+              />
+            ))}
+          </div>
+
+          {products.length >= productLimit ? (
+            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-bold text-primary">
+              Search by name, product code, or barcode to narrow a large catalog
+              without slowing the counter.
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-8 text-center">
+          <PackageCheck className="mx-auto h-8 w-8 text-muted-foreground" />
+          <h3 className="mt-3 text-base font-black">No products found</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-muted-foreground">
+            Try another product name or check stock in this selling location.
+          </p>
+        </div>
+      )}
     </section>
   );
 }
@@ -1186,70 +996,30 @@ function PaymentCard({
   paymentMethod,
   saleNotes,
   totalCents,
-  cashDrawerSession,
-  cashDrawerBusinessDay,
-  selectedBranchName,
+  selectedBranchId,
   isOwner,
+  canViewCashDrawer,
   canOpenCashDrawer,
   canCloseCashDrawer,
-  isLoadingCashDrawer,
-  isOpeningCashDrawer,
-  isClosingCashDrawer,
-  openingCashRwf,
-  openingCashNote,
-  countedCashRwf,
-  closingCashNote,
-  differenceReason,
-  ownerOverride,
-  reopenReason,
   isConfirming,
   isDisabled,
   onPaymentMethodChange,
   onSaleNotesChange,
-  onOpeningCashRwfChange,
-  onOpeningCashNoteChange,
-  onCountedCashRwfChange,
-  onClosingCashNoteChange,
-  onDifferenceReasonChange,
-  onOwnerOverrideChange,
-  onReopenReasonChange,
-  onOpenCashDrawer,
-  onCloseCashDrawer,
-  onRefreshCashDrawer,
+  onDrawerChanged,
 }: {
   paymentMethod: SalePaymentMethod;
   saleNotes: string;
   totalCents: number;
-  cashDrawerSession: CashDrawerSession | null;
-  cashDrawerBusinessDay: string;
-  selectedBranchName: string;
+  selectedBranchId: string;
   isOwner: boolean;
+  canViewCashDrawer: boolean;
   canOpenCashDrawer: boolean;
   canCloseCashDrawer: boolean;
-  isLoadingCashDrawer: boolean;
-  isOpeningCashDrawer: boolean;
-  isClosingCashDrawer: boolean;
-  openingCashRwf: string;
-  openingCashNote: string;
-  countedCashRwf: string;
-  closingCashNote: string;
-  differenceReason: string;
-  ownerOverride: boolean;
-  reopenReason: string;
   isConfirming: boolean;
   isDisabled: boolean;
   onPaymentMethodChange: (value: SalePaymentMethod) => void;
   onSaleNotesChange: (value: string) => void;
-  onOpeningCashRwfChange: (value: string) => void;
-  onOpeningCashNoteChange: (value: string) => void;
-  onCountedCashRwfChange: (value: string) => void;
-  onClosingCashNoteChange: (value: string) => void;
-  onDifferenceReasonChange: (value: string) => void;
-  onOwnerOverrideChange: (value: boolean) => void;
-  onReopenReasonChange: (value: string) => void;
-  onOpenCashDrawer: () => void;
-  onCloseCashDrawer: () => void;
-  onRefreshCashDrawer: () => void;
+  onDrawerChanged: (session: CashDrawerSession | null) => void;
 }) {
   return (
     <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
@@ -1301,34 +1071,14 @@ function PaymentCard({
           </p>
         </div>
 
-        <CashDrawerPaymentPanel
+        <CashDrawerPanel
+          branchId={selectedBranchId}
           paymentMethod={paymentMethod}
-          session={cashDrawerSession}
-          businessDay={cashDrawerBusinessDay}
-          selectedBranchName={selectedBranchName}
-          isOwner={isOwner}
           canOpen={canOpenCashDrawer}
           canClose={canCloseCashDrawer}
-          isLoading={isLoadingCashDrawer}
-          isOpening={isOpeningCashDrawer}
-          isClosing={isClosingCashDrawer}
-          openingCashRwf={openingCashRwf}
-          openingCashNote={openingCashNote}
-          countedCashRwf={countedCashRwf}
-          closingCashNote={closingCashNote}
-          differenceReason={differenceReason}
-          ownerOverride={ownerOverride}
-          reopenReason={reopenReason}
-          onOpeningCashRwfChange={onOpeningCashRwfChange}
-          onOpeningCashNoteChange={onOpeningCashNoteChange}
-          onCountedCashRwfChange={onCountedCashRwfChange}
-          onClosingCashNoteChange={onClosingCashNoteChange}
-          onDifferenceReasonChange={onDifferenceReasonChange}
-          onOwnerOverrideChange={onOwnerOverrideChange}
-          onReopenReasonChange={onReopenReasonChange}
-          onOpenCashDrawer={onOpenCashDrawer}
-          onCloseCashDrawer={onCloseCashDrawer}
-          onRefreshCashDrawer={onRefreshCashDrawer}
+          canView={canViewCashDrawer}
+          isOwner={isOwner}
+          onDrawerChanged={onDrawerChanged}
         />
 
         <TextAreaField
@@ -1357,343 +1107,6 @@ function PaymentCard({
           )}
           {isConfirming ? "Completing sale..." : "Confirm sale"}
         </button>
-      </div>
-    </section>
-  );
-}
-
-function CashDrawerPaymentPanel({
-  paymentMethod,
-  session,
-  businessDay,
-  selectedBranchName,
-  isOwner,
-  canOpen,
-  canClose,
-  isLoading,
-  isOpening,
-  isClosing,
-  openingCashRwf,
-  openingCashNote,
-  countedCashRwf,
-  closingCashNote,
-  differenceReason,
-  ownerOverride,
-  reopenReason,
-  onOpeningCashRwfChange,
-  onOpeningCashNoteChange,
-  onCountedCashRwfChange,
-  onClosingCashNoteChange,
-  onDifferenceReasonChange,
-  onOwnerOverrideChange,
-  onReopenReasonChange,
-  onOpenCashDrawer,
-  onCloseCashDrawer,
-  onRefreshCashDrawer,
-}: {
-  paymentMethod: SalePaymentMethod;
-  session: CashDrawerSession | null;
-  businessDay: string;
-  selectedBranchName: string;
-  isOwner: boolean;
-  canOpen: boolean;
-  canClose: boolean;
-  isLoading: boolean;
-  isOpening: boolean;
-  isClosing: boolean;
-  openingCashRwf: string;
-  openingCashNote: string;
-  countedCashRwf: string;
-  closingCashNote: string;
-  differenceReason: string;
-  ownerOverride: boolean;
-  reopenReason: string;
-  onOpeningCashRwfChange: (value: string) => void;
-  onOpeningCashNoteChange: (value: string) => void;
-  onCountedCashRwfChange: (value: string) => void;
-  onClosingCashNoteChange: (value: string) => void;
-  onDifferenceReasonChange: (value: string) => void;
-  onOwnerOverrideChange: (value: boolean) => void;
-  onReopenReasonChange: (value: string) => void;
-  onOpenCashDrawer: () => void;
-  onCloseCashDrawer: () => void;
-  onRefreshCashDrawer: () => void;
-}) {
-  if (paymentMethod !== "cash") {
-    return (
-      <section className="rounded-3xl border border-border bg-background p-4">
-        <div className="flex items-start gap-3">
-          <Banknote className="mt-0.5 h-5 w-5 text-muted-foreground" />
-          <div>
-            <p className="text-sm font-black">Cash drawer not used</p>
-            <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-              This payment method does not touch the cash drawer. The sale can
-              continue even when the drawer is closed.
-            </p>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <section className="rounded-3xl border border-border bg-background p-4">
-        <div className="flex items-center gap-3">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
-          <p className="text-sm font-black">Checking cash drawer...</p>
-        </div>
-      </section>
-    );
-  }
-
-  if (!session || session.status === "closed") {
-    const isClosedToday = session?.status === "closed";
-
-    return (
-      <section className="rounded-3xl border border-warning/25 bg-warning/10 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <StatusBadge variant="warning">
-              {isClosedToday ? "Closed for today" : "Cash drawer closed"}
-            </StatusBadge>
-            <h3 className="mt-3 text-base font-black text-warning">
-              {isClosedToday
-                ? "Drawer was already closed today"
-                : "Open drawer before taking cash"}
-            </h3>
-            <p className="mt-1 text-sm font-semibold leading-6 text-warning">
-              {isClosedToday
-                ? "This location can normally open a new drawer tomorrow. The owner can reopen today with a reason."
-                : `Cash sales are blocked until a drawer is opened for ${selectedBranchName}.`}
-            </p>
-            {businessDay ? (
-              <p className="mt-2 text-xs font-black uppercase tracking-[0.14em] text-warning">
-                Business day: {businessDay}
-              </p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={onRefreshCashDrawer}
-            className="rounded-2xl border border-warning/30 bg-background px-3 py-2 text-xs font-black text-warning"
-          >
-            Refresh
-          </button>
-        </div>
-
-        {session?.differenceCents !== null &&
-        session?.differenceCents !== undefined ? (
-          <div className="mt-4 rounded-2xl border border-warning/25 bg-background p-3">
-            <DetailRow
-              label="Last difference"
-              value={money(session.differenceCents)}
-            />
-          </div>
-        ) : null}
-
-        <div className="mt-4 grid gap-3">
-          {!isClosedToday ? (
-            <>
-              <InputField
-                label="Opening cash"
-                value={openingCashRwf}
-                onChange={onOpeningCashRwfChange}
-                type="number"
-                placeholder="Example: 50000"
-              />
-              <TextAreaField
-                label="Opening note"
-                value={openingCashNote}
-                onChange={onOpeningCashNoteChange}
-                placeholder="Optional note"
-              />
-            </>
-          ) : null}
-
-          {isClosedToday ? (
-            <div className="rounded-3xl border border-warning/25 bg-background p-4">
-              {isOwner ? (
-                <>
-                  <label className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface px-3 py-3 text-sm font-black">
-                    <span>Owner override</span>
-                    <input
-                      type="checkbox"
-                      checked={ownerOverride}
-                      onChange={(event) =>
-                        onOwnerOverrideChange(event.target.checked)
-                      }
-                    />
-                  </label>
-
-                  {ownerOverride ? (
-                    <div className="mt-3">
-                      <TextAreaField
-                        label="Reopen reason"
-                        value={reopenReason}
-                        onChange={onReopenReasonChange}
-                        placeholder="Explain why this drawer must be reopened today"
-                      />
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="text-sm font-bold leading-6 text-warning">
-                  Ask the owner if this drawer must be reopened today.
-                </p>
-              )}
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={onOpenCashDrawer}
-            disabled={
-              isOpening ||
-              !canOpen ||
-              (isClosedToday && (!isOwner || !ownerOverride))
-            }
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-warning px-4 py-3 text-sm font-black text-warning-foreground shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isOpening ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-warning-foreground/30 border-t-warning-foreground" />
-            ) : isClosedToday ? (
-              <RotateCcw className="h-4 w-4" />
-            ) : (
-              <Banknote className="h-4 w-4" />
-            )}
-            {isOpening
-              ? "Opening drawer..."
-              : isClosedToday
-                ? "Reopen drawer"
-                : "Open cash drawer"}
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  const parsedCountedCash = toCents(countedCashRwf);
-  const differencePreview =
-    parsedCountedCash === null
-      ? null
-      : parsedCountedCash - session.expectedCashCents;
-  const needsDifferenceReason =
-    differencePreview !== null && differencePreview !== 0;
-
-  return (
-    <section className="rounded-3xl border border-success/25 bg-success/10 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <StatusBadge variant="success">Cash drawer open</StatusBadge>
-          <h3 className="mt-3 text-base font-black text-success">
-            Cash sales can continue
-          </h3>
-          <p className="mt-1 text-sm font-semibold leading-6 text-success">
-            Cash collected will be added to this drawer automatically.
-          </p>
-          <p className="mt-2 text-xs font-black uppercase tracking-[0.14em] text-success">
-            Business day: {session.businessDay || businessDay}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onRefreshCashDrawer}
-          className="rounded-2xl border border-success/30 bg-background px-3 py-2 text-xs font-black text-success"
-        >
-          Refresh
-        </button>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <MiniMetric
-          label="Opening cash"
-          value={money(session.openingCashCents)}
-        />
-        <MiniMetric
-          label="Expected cash"
-          value={money(session.expectedCashCents)}
-        />
-        <MiniMetric
-          label="Opened by"
-          value={session.openedByName || "Not shown"}
-        />
-        <MiniMetric label="Location" value={session.branchName} />
-      </div>
-
-      <div className="mt-4 rounded-3xl border border-border bg-background p-4">
-        <div className="flex items-start gap-3">
-          <Banknote className="mt-0.5 h-5 w-5 text-primary" />
-          <div>
-            <p className="text-sm font-black">Close drawer</p>
-            <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-              Close only after counting the physical cash in the drawer.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3">
-          <InputField
-            label="Cash counted"
-            value={countedCashRwf}
-            onChange={onCountedCashRwfChange}
-            type="number"
-            placeholder="Physical cash counted"
-          />
-
-          {differencePreview !== null ? (
-            <div
-              className={[
-                "rounded-2xl border p-3",
-                differencePreview === 0
-                  ? "border-success/25 bg-success/10 text-success"
-                  : "border-warning/25 bg-warning/10 text-warning",
-              ].join(" ")}
-            >
-              <DetailRow
-                label="Difference preview"
-                value={money(differencePreview)}
-              />
-              <p className="mt-2 text-sm font-bold leading-6">
-                {differencePreview === 0
-                  ? "Cash counted matches expected cash."
-                  : differencePreview > 0
-                    ? "Cash counted is above expected. Add a reason before closing."
-                    : "Cash counted is below expected. Add a reason before closing."}
-              </p>
-            </div>
-          ) : null}
-
-          {needsDifferenceReason ? (
-            <TextAreaField
-              label="Reason for difference"
-              value={differenceReason}
-              onChange={onDifferenceReasonChange}
-              placeholder="Explain why cash counted is above or below expected"
-            />
-          ) : null}
-
-          <TextAreaField
-            label="Closing note"
-            value={closingCashNote}
-            onChange={onClosingCashNoteChange}
-            placeholder="Optional note"
-          />
-
-          <button
-            type="button"
-            onClick={onCloseCashDrawer}
-            disabled={isClosing || !canClose}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-sm font-black text-foreground shadow-soft transition hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isClosing ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
-            ) : (
-              <Banknote className="h-4 w-4" />
-            )}
-            {isClosing ? "Closing drawer..." : "Close cash drawer"}
-          </button>
-        </div>
       </div>
     </section>
   );
@@ -1757,43 +1170,54 @@ function ReceiptSummary({ result }: { result: SaleDetailResponse }) {
   );
 }
 
-function PosSkeleton() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
-      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-52 animate-pulse rounded-3xl border border-border bg-surface"
-          />
-        ))}
-      </div>
-      <div className="h-[620px] animate-pulse rounded-section border border-border bg-surface" />
-    </div>
-  );
-}
-
-function RecentSalesCard({
+function SalesHistoryCard({
   sales,
+  totalSales,
+  showing,
+  saleSearch,
+  hasMoreSales,
+  onSaleSearchChange,
+  onLoadMore,
   onOpenSale,
 }: {
   sales: SaleSummary[];
+  totalSales: number;
+  showing: number;
+  saleSearch: string;
+  hasMoreSales: boolean;
+  onSaleSearchChange: (value: string) => void;
+  onLoadMore: () => void;
   onOpenSale: (sale: SaleSummary) => void;
 }) {
   return (
     <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-black">Recent sales</h2>
+          <h2 className="text-lg font-black">Sales history</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-            Latest sales for the selected selling location. Open any sale to
-            review the full receipt trail.
+            Showing the latest sales first. Search by receipt, sale number, or
+            customer when the list grows.
           </p>
         </div>
         <StatusBadge variant="primary">
-          {sales.length.toLocaleString()} shown
+          {showing.toLocaleString()} of {totalSales.toLocaleString()}
         </StatusBadge>
       </div>
+
+      <label className="mt-4 block">
+        <span className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
+          Search sales
+        </span>
+        <div className="mt-2 flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-3">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={saleSearch}
+            onChange={(event) => onSaleSearchChange(event.target.value)}
+            placeholder="Receipt, sale number, or customer"
+            className="w-full bg-transparent text-sm font-bold outline-none"
+          />
+        </div>
+      </label>
 
       {sales.length ? (
         <div className="mt-4 grid gap-3">
@@ -1830,11 +1254,21 @@ function RecentSalesCard({
               </div>
             </button>
           ))}
+
+          {hasMoreSales ? (
+            <button
+              type="button"
+              onClick={onLoadMore}
+              className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-black text-foreground transition hover:border-primary/50"
+            >
+              Load more sales
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-6 text-center">
           <ReceiptText className="mx-auto h-7 w-7 text-muted-foreground" />
-          <h3 className="mt-3 text-base font-black">No sales here yet</h3>
+          <h3 className="mt-3 text-base font-black">No sales found</h3>
           <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
             Completed sales for this location will appear here.
           </p>
@@ -1882,11 +1316,11 @@ function SaleDetailDrawer({
       />
 
       <aside className="rurix-scrollbar relative flex h-full w-full max-w-xl flex-col overflow-y-auto rounded-[1.4rem] border border-border bg-background shadow-card">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-black">{receiptNumber}</p>
             <p className="mt-0.5 truncate text-xs font-bold text-muted-foreground">
-              {customerName} · {money(totalCents)}
+              {customerName} — {money(totalCents)}
             </p>
           </div>
           <button
@@ -1937,6 +1371,8 @@ function SaleDetailDrawer({
                 }
               />
               <DetailRow label="Total" value={money(totalCents)} />
+              <DetailRow label="Paid" value={money(paidCents)} />
+              <DetailRow label="Balance" value={money(balanceCents)} />
             </div>
           </section>
 
@@ -2002,7 +1438,7 @@ function SaleDetailDrawer({
                   <div>
                     <h3 className="text-base font-black">Payment</h3>
                     <p className="mt-1 text-sm font-semibold text-muted-foreground">
-                      Payment record saved with this receipt.
+                      Payment records saved with this receipt.
                     </p>
                   </div>
                   <StatusBadge
@@ -2014,21 +1450,6 @@ function SaleDetailDrawer({
                       ? "Fully paid"
                       : "Balance due"}
                   </StatusBadge>
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <DetailRow
-                    label="Total"
-                    value={money(detail.sale.totalCents)}
-                  />
-                  <DetailRow
-                    label="Paid"
-                    value={money(detail.sale.paidCents)}
-                  />
-                  <DetailRow
-                    label="Balance"
-                    value={money(detail.sale.balanceCents)}
-                  />
                 </div>
 
                 <div className="mt-4 grid gap-3">
@@ -2059,6 +1480,22 @@ function SaleDetailDrawer({
           ) : null}
         </div>
       </aside>
+    </div>
+  );
+}
+
+function PosSkeleton() {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-52 animate-pulse rounded-3xl border border-border bg-surface"
+          />
+        ))}
+      </div>
+      <div className="h-[620px] animate-pulse rounded-section border border-border bg-surface" />
     </div>
   );
 }
@@ -2218,20 +1655,6 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function toCents(value: string) {
-  const numberValue = Number(value);
-
-  if (!Number.isFinite(numberValue) || numberValue < 0) {
-    return null;
-  }
-
-  return Math.round(numberValue * 100);
-}
-
-function fromCents(value: number) {
-  return String(Math.round(value / 100));
 }
 
 function money(value: number) {
