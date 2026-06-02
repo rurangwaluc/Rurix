@@ -5,25 +5,34 @@ export type CashDrawerStatus = "open" | "closed";
 export type CashDrawerMovementType =
   | "opening_cash"
   | "cash_sale"
-  | "cash_in"
-  | "cash_out"
-  | "closing_adjustment";
+  | "manual_cash_in"
+  | "manual_cash_out"
+  | "drawer_reopened"
+  | "drawer_closed";
 
 export type CashDrawerSession = {
   id: string;
+  businessId: string;
   branchId: string;
   branchName: string;
+  businessDay: string;
   status: CashDrawerStatus;
   openingCashCents: number;
   expectedCashCents: number;
   countedCashCents: number | null;
   differenceCents: number | null;
-  notes: string | null;
-  closeNotes: string | null;
+  closeNote: string | null;
+  differenceReason: string | null;
+  openedByUserId: string;
   openedByName: string | null;
+  closedByUserId: string | null;
   closedByName: string | null;
+  reopenedByUserId: string | null;
+  reopenedByName: string | null;
+  reopenReason: string | null;
   openedAt: string;
   closedAt: string | null;
+  reopenedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -31,18 +40,31 @@ export type CashDrawerSession = {
 export type CashDrawerMovement = {
   id: string;
   cashDrawerSessionId: string;
-  saleId: string | null;
-  salePaymentId: string | null;
-  saleNumber: string | null;
-  receiptNumber: string | null;
+  businessId: string;
+  branchId: string;
   movementType: CashDrawerMovementType;
   amountCents: number;
-  balanceBeforeCents: number;
-  balanceAfterCents: number;
+  expectedCashBeforeCents: number;
+  expectedCashAfterCents: number;
   reason: string | null;
+  note: string | null;
   reference: string | null;
+  actorUserId: string | null;
   actorName: string | null;
+  saleId: string | null;
+  salePaymentId: string | null;
   createdAt: string;
+};
+
+export type CashDrawerCurrentResponse = {
+  ok: true;
+  session: CashDrawerSession | null;
+  businessDay: string;
+};
+
+export type CashDrawerActionResponse = {
+  ok: true;
+  session: CashDrawerSession | null;
 };
 
 export type CashDrawerDetailResponse = {
@@ -54,13 +76,16 @@ export type CashDrawerDetailResponse = {
 export type OpenCashDrawerPayload = {
   branchId: string;
   openingCashCents: number;
-  notes?: string;
+  note?: string;
+  ownerOverride?: boolean;
+  reopenReason?: string;
 };
 
 export type CloseCashDrawerPayload = {
   branchId: string;
   countedCashCents: number;
-  notes?: string;
+  note?: string;
+  differenceReason?: string;
 };
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -78,16 +103,16 @@ function buildQuery(params: Record<string, string | undefined>) {
 }
 
 export function getCurrentCashDrawer(branchId: string) {
-  return apiRequest<{
-    ok: true;
-    session: CashDrawerSession | null;
-  }>(`/cash-drawer/current${buildQuery({ branchId })}`, {
-    auth: true,
-  });
+  return apiRequest<CashDrawerCurrentResponse>(
+    `/cash-drawer/current${buildQuery({ branchId })}`,
+    {
+      auth: true,
+    },
+  );
 }
 
 export function openCashDrawer(payload: OpenCashDrawerPayload) {
-  return apiRequest<CashDrawerDetailResponse>("/cash-drawer/open", {
+  return apiRequest<CashDrawerActionResponse>("/cash-drawer/open", {
     method: "POST",
     auth: true,
     body: payload,
@@ -95,7 +120,7 @@ export function openCashDrawer(payload: OpenCashDrawerPayload) {
 }
 
 export function closeCashDrawer(payload: CloseCashDrawerPayload) {
-  return apiRequest<CashDrawerDetailResponse>("/cash-drawer/close", {
+  return apiRequest<CashDrawerActionResponse>("/cash-drawer/close", {
     method: "POST",
     auth: true,
     body: payload,

@@ -9,12 +9,13 @@ import {
   Plus,
   ReceiptText,
   RefreshCw,
+  RotateCcw,
   Search,
-  X,
   ShieldAlert,
   ShoppingCart,
   Trash2,
   UserPlus,
+  X,
 } from "lucide-react";
 
 import { type CurrentUserResponse } from "../../lib/api";
@@ -72,6 +73,15 @@ export function PosView({ context }: PosViewProps) {
   const defaultBranchId = mainBranch?.id || accessibleBranches[0]?.id || "";
 
   const canCreateSale = context.membership.permissions.includes("SALE_CREATE");
+  const canViewCashDrawer =
+    context.membership.permissions.includes("CASH_SESSION_VIEW");
+  const canOpenCashDrawer =
+    context.membership.permissions.includes("CASH_SESSION_OPEN");
+  const canCloseCashDrawer =
+    context.membership.permissions.includes("CASH_SESSION_CLOSE");
+  const isOwner =
+    context.membership.memberType === "PRIMARY_OWNER" ||
+    context.membership.memberType === "OWNER";
 
   const [selectedBranchId, setSelectedBranchId] = useState(defaultBranchId);
   const [search, setSearch] = useState("");
@@ -91,6 +101,7 @@ export function PosView({ context }: PosViewProps) {
 
   const [cashDrawerSession, setCashDrawerSession] =
     useState<CashDrawerSession | null>(null);
+  const [cashDrawerBusinessDay, setCashDrawerBusinessDay] = useState("");
   const [isLoadingCashDrawer, setIsLoadingCashDrawer] = useState(true);
   const [isOpeningCashDrawer, setIsOpeningCashDrawer] = useState(false);
   const [isClosingCashDrawer, setIsClosingCashDrawer] = useState(false);
@@ -98,6 +109,9 @@ export function PosView({ context }: PosViewProps) {
   const [openingCashNote, setOpeningCashNote] = useState("");
   const [countedCashRwf, setCountedCashRwf] = useState("");
   const [closingCashNote, setClosingCashNote] = useState("");
+  const [differenceReason, setDifferenceReason] = useState("");
+  const [ownerOverride, setOwnerOverride] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
 
   const [lastSale, setLastSale] = useState<SaleDetailResponse | null>(null);
   const [selectedSale, setSelectedSale] = useState<SaleDetailResponse | null>(
@@ -155,6 +169,10 @@ export function PosView({ context }: PosViewProps) {
     (line) => line.quantity > line.availableQuantity,
   );
 
+  const isCashDrawerOpen = cashDrawerSession?.status === "open";
+  const isCashDrawerClosedToday = cashDrawerSession?.status === "closed";
+  const isCashDrawerBlocked = paymentMethod === "cash" && !isCashDrawerOpen;
+
   useEffect(() => {
     const timer = window.setTimeout(
       () => {
@@ -173,8 +191,9 @@ export function PosView({ context }: PosViewProps) {
   }, [selectedBranchId]);
 
   async function reloadCashDrawer() {
-    if (!selectedBranchId) {
+    if (!selectedBranchId || !canViewCashDrawer) {
       setCashDrawerSession(null);
+      setCashDrawerBusinessDay("");
       setIsLoadingCashDrawer(false);
       return;
     }
@@ -183,13 +202,26 @@ export function PosView({ context }: PosViewProps) {
 
     try {
       const result = await getCurrentCashDrawer(selectedBranchId);
-      setCashDrawerSession(result.session);
+      const session = result.session;
 
-      if (result.session) {
-        setCountedCashRwf(fromCents(result.session.expectedCashCents));
+      setCashDrawerSession(session);
+      setCashDrawerBusinessDay(result.businessDay);
+
+      if (session?.status === "open") {
+        setCountedCashRwf(fromCents(session.expectedCashCents));
+      } else if (
+        session &&
+        session.countedCashCents !== null &&
+        session.countedCashCents !== undefined
+      ) {
+        setCountedCashRwf(fromCents(session.countedCashCents));
       } else {
         setCountedCashRwf("");
       }
+
+      setOwnerOverride(false);
+      setReopenReason("");
+      setDifferenceReason("");
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -207,10 +239,27 @@ export function PosView({ context }: PosViewProps) {
       return;
     }
 
-    const openingCashCents = toCents(openingCashRwf);
+    if (!canOpenCashDrawer) {
+      setError("You do not have access to open the cash drawer.");
+      return;
+    }
+
+    if (isCashDrawerClosedToday && !ownerOverride) {
+      setError(
+        "This drawer is already closed for today. The owner can reopen it with a reason.",
+      );
+      return;
+    }
+
+    if (isCashDrawerClosedToday && ownerOverride && !reopenReason.trim()) {
+      setError("Add a reason before reopening this cash drawer.");
+      return;
+    }
+
+    const openingCashCents = toCents(openingCashRwf || "0");
 
     if (openingCashCents === null) {
-      setError("Enter the opening cash amount.");
+      setError("Enter a valid opening cash amount.");
       return;
     }
 
@@ -227,16 +276,33 @@ export function PosView({ context }: PosViewProps) {
       const note = openingCashNote.trim();
 
       if (note) {
-        payload.notes = note;
+        payload.note = note;
+      }
+
+      if (ownerOverride) {
+        payload.ownerOverride = true;
+        payload.reopenReason = reopenReason.trim();
       }
 
       const result = await openCashDrawer(payload);
+      const openedSession = result.session;
 
-      setCashDrawerSession(result.session);
-      setCountedCashRwf(fromCents(result.session.expectedCashCents));
+      if (!openedSession) {
+        throw new Error("Cash drawer was not opened. Please try again.");
+      }
+
+      setCashDrawerSession(openedSession);
+      setCountedCashRwf(fromCents(openedSession.expectedCashCents));
+
       setOpeningCashRwf("");
       setOpeningCashNote("");
-      setSuccess("Cash drawer opened for this selling location.");
+      setOwnerOverride(false);
+      setReopenReason("");
+      setSuccess(
+        ownerOverride
+          ? "Cash drawer reopened for this selling location."
+          : "Cash drawer opened for this selling location.",
+      );
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -254,10 +320,25 @@ export function PosView({ context }: PosViewProps) {
       return;
     }
 
+    if (!canCloseCashDrawer) {
+      setError("You do not have access to close the cash drawer.");
+      return;
+    }
+
     const countedCashCents = toCents(countedCashRwf);
 
     if (countedCashCents === null) {
       setError("Enter the counted cash amount.");
+      return;
+    }
+
+    const expectedCashCents = cashDrawerSession?.expectedCashCents || 0;
+    const differenceCents = countedCashCents - expectedCashCents;
+
+    if (differenceCents !== 0 && !differenceReason.trim()) {
+      setError(
+        "Add a reason because the cash counted is different from the expected cash.",
+      );
       return;
     }
 
@@ -272,19 +353,30 @@ export function PosView({ context }: PosViewProps) {
       };
 
       const note = closingCashNote.trim();
+      const reason = differenceReason.trim();
 
       if (note) {
-        payload.notes = note;
+        payload.note = note;
+      }
+
+      if (reason) {
+        payload.differenceReason = reason;
       }
 
       const result = await closeCashDrawer(payload);
 
-      setCashDrawerSession(null);
-      setCountedCashRwf("");
+      setCashDrawerSession(result.session);
+      setCountedCashRwf(
+        result.session?.countedCashCents !== null &&
+          result.session?.countedCashCents !== undefined
+          ? fromCents(result.session.countedCashCents)
+          : "",
+      );
       setClosingCashNote("");
+      setDifferenceReason("");
       setSuccess(
         `Cash drawer closed. Difference: ${money(
-          result.session.differenceCents || 0,
+          result.session?.differenceCents || 0,
         )}.`,
       );
       await reloadPos();
@@ -470,6 +562,13 @@ export function PosView({ context }: PosViewProps) {
       return;
     }
 
+    if (isCashDrawerBlocked) {
+      setError(
+        "Open the cash drawer before taking cash. Non-cash payments can continue without the drawer.",
+      );
+      return;
+    }
+
     if (customerMode === "existing" && !selectedCustomerId) {
       setError("Choose the customer for this sale.");
       return;
@@ -587,7 +686,7 @@ export function PosView({ context }: PosViewProps) {
               </p>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
+            <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[620px] xl:grid-cols-4">
               <SummaryCard label="Cart items" value={cartQuantity} />
               <SummaryCard
                 label="Products shown"
@@ -595,7 +694,7 @@ export function PosView({ context }: PosViewProps) {
               />
               <SummaryCard
                 label="Cash drawer"
-                value={cashDrawerSession ? "Open" : "Closed"}
+                value={isCashDrawerOpen ? "Open" : "Closed"}
               />
               <SummaryCard label="Sale total" value={money(subtotalCents)} />
             </div>
@@ -747,9 +846,13 @@ export function PosView({ context }: PosViewProps) {
               saleNotes={saleNotes}
               totalCents={subtotalCents}
               cashDrawerSession={cashDrawerSession}
+              cashDrawerBusinessDay={cashDrawerBusinessDay}
               selectedBranchName={
                 selectedBranch?.name || "this selling location"
               }
+              isOwner={isOwner}
+              canOpenCashDrawer={canOpenCashDrawer}
+              canCloseCashDrawer={canCloseCashDrawer}
               isLoadingCashDrawer={isLoadingCashDrawer}
               isOpeningCashDrawer={isOpeningCashDrawer}
               isClosingCashDrawer={isClosingCashDrawer}
@@ -757,11 +860,12 @@ export function PosView({ context }: PosViewProps) {
               openingCashNote={openingCashNote}
               countedCashRwf={countedCashRwf}
               closingCashNote={closingCashNote}
+              differenceReason={differenceReason}
+              ownerOverride={ownerOverride}
+              reopenReason={reopenReason}
               isConfirming={isConfirming}
               isDisabled={
-                !cart.length ||
-                hasOversoldLine ||
-                (paymentMethod === "cash" && !cashDrawerSession)
+                !cart.length || hasOversoldLine || isCashDrawerBlocked
               }
               onPaymentMethodChange={setPaymentMethod}
               onSaleNotesChange={setSaleNotes}
@@ -769,6 +873,9 @@ export function PosView({ context }: PosViewProps) {
               onOpeningCashNoteChange={setOpeningCashNote}
               onCountedCashRwfChange={setCountedCashRwf}
               onClosingCashNoteChange={setClosingCashNote}
+              onDifferenceReasonChange={setDifferenceReason}
+              onOwnerOverrideChange={setOwnerOverride}
+              onReopenReasonChange={setReopenReason}
               onOpenCashDrawer={() => void handleOpenCashDrawer()}
               onCloseCashDrawer={() => void handleCloseCashDrawer()}
               onRefreshCashDrawer={() => void reloadCashDrawer()}
@@ -776,6 +883,7 @@ export function PosView({ context }: PosViewProps) {
           </form>
         </section>
       ) : null}
+
       {selectedSaleId ? (
         <SaleDetailDrawer
           detail={selectedSale}
@@ -1007,6 +1115,7 @@ function CustomerCard({
           { key: "new" as const, label: "New" },
         ].map((mode) => {
           const isActive = mode.key === customerMode;
+
           return (
             <button
               key={mode.key}
@@ -1078,7 +1187,11 @@ function PaymentCard({
   saleNotes,
   totalCents,
   cashDrawerSession,
+  cashDrawerBusinessDay,
   selectedBranchName,
+  isOwner,
+  canOpenCashDrawer,
+  canCloseCashDrawer,
   isLoadingCashDrawer,
   isOpeningCashDrawer,
   isClosingCashDrawer,
@@ -1086,6 +1199,9 @@ function PaymentCard({
   openingCashNote,
   countedCashRwf,
   closingCashNote,
+  differenceReason,
+  ownerOverride,
+  reopenReason,
   isConfirming,
   isDisabled,
   onPaymentMethodChange,
@@ -1094,6 +1210,9 @@ function PaymentCard({
   onOpeningCashNoteChange,
   onCountedCashRwfChange,
   onClosingCashNoteChange,
+  onDifferenceReasonChange,
+  onOwnerOverrideChange,
+  onReopenReasonChange,
   onOpenCashDrawer,
   onCloseCashDrawer,
   onRefreshCashDrawer,
@@ -1102,7 +1221,11 @@ function PaymentCard({
   saleNotes: string;
   totalCents: number;
   cashDrawerSession: CashDrawerSession | null;
+  cashDrawerBusinessDay: string;
   selectedBranchName: string;
+  isOwner: boolean;
+  canOpenCashDrawer: boolean;
+  canCloseCashDrawer: boolean;
   isLoadingCashDrawer: boolean;
   isOpeningCashDrawer: boolean;
   isClosingCashDrawer: boolean;
@@ -1110,6 +1233,9 @@ function PaymentCard({
   openingCashNote: string;
   countedCashRwf: string;
   closingCashNote: string;
+  differenceReason: string;
+  ownerOverride: boolean;
+  reopenReason: string;
   isConfirming: boolean;
   isDisabled: boolean;
   onPaymentMethodChange: (value: SalePaymentMethod) => void;
@@ -1118,6 +1244,9 @@ function PaymentCard({
   onOpeningCashNoteChange: (value: string) => void;
   onCountedCashRwfChange: (value: string) => void;
   onClosingCashNoteChange: (value: string) => void;
+  onDifferenceReasonChange: (value: string) => void;
+  onOwnerOverrideChange: (value: boolean) => void;
+  onReopenReasonChange: (value: string) => void;
   onOpenCashDrawer: () => void;
   onCloseCashDrawer: () => void;
   onRefreshCashDrawer: () => void;
@@ -1175,7 +1304,11 @@ function PaymentCard({
         <CashDrawerPaymentPanel
           paymentMethod={paymentMethod}
           session={cashDrawerSession}
+          businessDay={cashDrawerBusinessDay}
           selectedBranchName={selectedBranchName}
+          isOwner={isOwner}
+          canOpen={canOpenCashDrawer}
+          canClose={canCloseCashDrawer}
           isLoading={isLoadingCashDrawer}
           isOpening={isOpeningCashDrawer}
           isClosing={isClosingCashDrawer}
@@ -1183,10 +1316,16 @@ function PaymentCard({
           openingCashNote={openingCashNote}
           countedCashRwf={countedCashRwf}
           closingCashNote={closingCashNote}
+          differenceReason={differenceReason}
+          ownerOverride={ownerOverride}
+          reopenReason={reopenReason}
           onOpeningCashRwfChange={onOpeningCashRwfChange}
           onOpeningCashNoteChange={onOpeningCashNoteChange}
           onCountedCashRwfChange={onCountedCashRwfChange}
           onClosingCashNoteChange={onClosingCashNoteChange}
+          onDifferenceReasonChange={onDifferenceReasonChange}
+          onOwnerOverrideChange={onOwnerOverrideChange}
+          onReopenReasonChange={onReopenReasonChange}
           onOpenCashDrawer={onOpenCashDrawer}
           onCloseCashDrawer={onCloseCashDrawer}
           onRefreshCashDrawer={onRefreshCashDrawer}
@@ -1226,7 +1365,11 @@ function PaymentCard({
 function CashDrawerPaymentPanel({
   paymentMethod,
   session,
+  businessDay,
   selectedBranchName,
+  isOwner,
+  canOpen,
+  canClose,
   isLoading,
   isOpening,
   isClosing,
@@ -1234,17 +1377,27 @@ function CashDrawerPaymentPanel({
   openingCashNote,
   countedCashRwf,
   closingCashNote,
+  differenceReason,
+  ownerOverride,
+  reopenReason,
   onOpeningCashRwfChange,
   onOpeningCashNoteChange,
   onCountedCashRwfChange,
   onClosingCashNoteChange,
+  onDifferenceReasonChange,
+  onOwnerOverrideChange,
+  onReopenReasonChange,
   onOpenCashDrawer,
   onCloseCashDrawer,
   onRefreshCashDrawer,
 }: {
   paymentMethod: SalePaymentMethod;
   session: CashDrawerSession | null;
+  businessDay: string;
   selectedBranchName: string;
+  isOwner: boolean;
+  canOpen: boolean;
+  canClose: boolean;
   isLoading: boolean;
   isOpening: boolean;
   isClosing: boolean;
@@ -1252,10 +1405,16 @@ function CashDrawerPaymentPanel({
   openingCashNote: string;
   countedCashRwf: string;
   closingCashNote: string;
+  differenceReason: string;
+  ownerOverride: boolean;
+  reopenReason: string;
   onOpeningCashRwfChange: (value: string) => void;
   onOpeningCashNoteChange: (value: string) => void;
   onCountedCashRwfChange: (value: string) => void;
   onClosingCashNoteChange: (value: string) => void;
+  onDifferenceReasonChange: (value: string) => void;
+  onOwnerOverrideChange: (value: boolean) => void;
+  onReopenReasonChange: (value: string) => void;
   onOpenCashDrawer: () => void;
   onCloseCashDrawer: () => void;
   onRefreshCashDrawer: () => void;
@@ -1288,19 +1447,31 @@ function CashDrawerPaymentPanel({
     );
   }
 
-  if (!session) {
+  if (!session || session.status === "closed") {
+    const isClosedToday = session?.status === "closed";
+
     return (
       <section className="rounded-3xl border border-warning/25 bg-warning/10 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <StatusBadge variant="warning">Cash drawer closed</StatusBadge>
+            <StatusBadge variant="warning">
+              {isClosedToday ? "Closed for today" : "Cash drawer closed"}
+            </StatusBadge>
             <h3 className="mt-3 text-base font-black text-warning">
-              Open drawer before taking cash
+              {isClosedToday
+                ? "Drawer was already closed today"
+                : "Open drawer before taking cash"}
             </h3>
             <p className="mt-1 text-sm font-semibold leading-6 text-warning">
-              Cash sales are blocked until a drawer is opened for{" "}
-              {selectedBranchName}.
+              {isClosedToday
+                ? "This location can normally open a new drawer tomorrow. The owner can reopen today with a reason."
+                : `Cash sales are blocked until a drawer is opened for ${selectedBranchName}.`}
             </p>
+            {businessDay ? (
+              <p className="mt-2 text-xs font-black uppercase tracking-[0.14em] text-warning">
+                Business day: {businessDay}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -1311,42 +1482,104 @@ function CashDrawerPaymentPanel({
           </button>
         </div>
 
+        {session?.differenceCents !== null &&
+        session?.differenceCents !== undefined ? (
+          <div className="mt-4 rounded-2xl border border-warning/25 bg-background p-3">
+            <DetailRow
+              label="Last difference"
+              value={money(session.differenceCents)}
+            />
+          </div>
+        ) : null}
+
         <div className="mt-4 grid gap-3">
-          <InputField
-            label="Opening cash"
-            value={openingCashRwf}
-            onChange={onOpeningCashRwfChange}
-            type="number"
-            placeholder="Example: 50000"
-          />
-          <TextAreaField
-            label="Opening note"
-            value={openingCashNote}
-            onChange={onOpeningCashNoteChange}
-            placeholder="Optional note"
-          />
+          {!isClosedToday ? (
+            <>
+              <InputField
+                label="Opening cash"
+                value={openingCashRwf}
+                onChange={onOpeningCashRwfChange}
+                type="number"
+                placeholder="Example: 50000"
+              />
+              <TextAreaField
+                label="Opening note"
+                value={openingCashNote}
+                onChange={onOpeningCashNoteChange}
+                placeholder="Optional note"
+              />
+            </>
+          ) : null}
+
+          {isClosedToday ? (
+            <div className="rounded-3xl border border-warning/25 bg-background p-4">
+              {isOwner ? (
+                <>
+                  <label className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface px-3 py-3 text-sm font-black">
+                    <span>Owner override</span>
+                    <input
+                      type="checkbox"
+                      checked={ownerOverride}
+                      onChange={(event) =>
+                        onOwnerOverrideChange(event.target.checked)
+                      }
+                    />
+                  </label>
+
+                  {ownerOverride ? (
+                    <div className="mt-3">
+                      <TextAreaField
+                        label="Reopen reason"
+                        value={reopenReason}
+                        onChange={onReopenReasonChange}
+                        placeholder="Explain why this drawer must be reopened today"
+                      />
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-sm font-bold leading-6 text-warning">
+                  Ask the owner if this drawer must be reopened today.
+                </p>
+              )}
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={onOpenCashDrawer}
-            disabled={isOpening}
+            disabled={
+              isOpening ||
+              !canOpen ||
+              (isClosedToday && (!isOwner || !ownerOverride))
+            }
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-warning px-4 py-3 text-sm font-black text-warning-foreground shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isOpening ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-warning-foreground/30 border-t-warning-foreground" />
+            ) : isClosedToday ? (
+              <RotateCcw className="h-4 w-4" />
             ) : (
               <Banknote className="h-4 w-4" />
             )}
-            {isOpening ? "Opening drawer..." : "Open cash drawer"}
+            {isOpening
+              ? "Opening drawer..."
+              : isClosedToday
+                ? "Reopen drawer"
+                : "Open cash drawer"}
           </button>
         </div>
       </section>
     );
   }
 
+  const parsedCountedCash = toCents(countedCashRwf);
   const differencePreview =
-    toCents(countedCashRwf) === null
+    parsedCountedCash === null
       ? null
-      : (toCents(countedCashRwf) || 0) - session.expectedCashCents;
+      : parsedCountedCash - session.expectedCashCents;
+  const needsDifferenceReason =
+    differencePreview !== null && differencePreview !== 0;
 
   return (
     <section className="rounded-3xl border border-success/25 bg-success/10 p-4">
@@ -1358,6 +1591,9 @@ function CashDrawerPaymentPanel({
           </h3>
           <p className="mt-1 text-sm font-semibold leading-6 text-success">
             Cash collected will be added to this drawer automatically.
+          </p>
+          <p className="mt-2 text-xs font-black uppercase tracking-[0.14em] text-success">
+            Business day: {session.businessDay || businessDay}
           </p>
         </div>
         <button
@@ -1398,28 +1634,56 @@ function CashDrawerPaymentPanel({
 
         <div className="mt-4 grid gap-3">
           <InputField
-            label="Counted cash"
+            label="Cash counted"
             value={countedCashRwf}
             onChange={onCountedCashRwfChange}
             type="number"
             placeholder="Physical cash counted"
           />
+
           {differencePreview !== null ? (
-            <DetailRow
-              label="Difference preview"
-              value={money(differencePreview)}
+            <div
+              className={[
+                "rounded-2xl border p-3",
+                differencePreview === 0
+                  ? "border-success/25 bg-success/10 text-success"
+                  : "border-warning/25 bg-warning/10 text-warning",
+              ].join(" ")}
+            >
+              <DetailRow
+                label="Difference preview"
+                value={money(differencePreview)}
+              />
+              <p className="mt-2 text-sm font-bold leading-6">
+                {differencePreview === 0
+                  ? "Cash counted matches expected cash."
+                  : differencePreview > 0
+                    ? "Cash counted is above expected. Add a reason before closing."
+                    : "Cash counted is below expected. Add a reason before closing."}
+              </p>
+            </div>
+          ) : null}
+
+          {needsDifferenceReason ? (
+            <TextAreaField
+              label="Reason for difference"
+              value={differenceReason}
+              onChange={onDifferenceReasonChange}
+              placeholder="Explain why cash counted is above or below expected"
             />
           ) : null}
+
           <TextAreaField
             label="Closing note"
             value={closingCashNote}
             onChange={onClosingCashNoteChange}
             placeholder="Optional note"
           />
+
           <button
             type="button"
             onClick={onCloseCashDrawer}
-            disabled={isClosing}
+            disabled={isClosing || !canClose}
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-sm font-black text-foreground shadow-soft transition hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isClosing ? (
