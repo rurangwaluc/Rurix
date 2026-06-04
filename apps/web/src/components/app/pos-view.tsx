@@ -32,6 +32,7 @@ import {
   type SaleSummary,
 } from "../../lib/sales-api";
 import { CashDrawerPanel } from "./cash-drawer-panel";
+import { SalesDocumentPrint } from "./sales-document-print";
 import { StatusBadge } from "../status-badge";
 
 type PosViewProps = {
@@ -567,7 +568,9 @@ export function PosView({ context }: PosViewProps) {
               onAddProduct={addProduct}
             />
 
-            {lastSale ? <ReceiptSummary result={lastSale} /> : null}
+            {lastSale ? (
+              <ReceiptSummary result={lastSale} context={context} />
+            ) : null}
 
             <SalesHistoryCard
               sales={visibleSales}
@@ -635,6 +638,7 @@ export function PosView({ context }: PosViewProps) {
         <SaleDetailDrawer
           detail={selectedSale}
           summary={selectedSaleSummary}
+          context={context}
           isLoading={isLoadingSaleDetail}
           onClose={closeSaleDetail}
         />
@@ -1112,7 +1116,13 @@ function PaymentCard({
   );
 }
 
-function ReceiptSummary({ result }: { result: SaleDetailResponse }) {
+function ReceiptSummary({
+  result,
+  context,
+}: {
+  result: SaleDetailResponse;
+  context: CurrentUserResponse;
+}) {
   return (
     <section className="rounded-section border border-success/25 bg-success/10 p-4 shadow-card sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1129,7 +1139,15 @@ function ReceiptSummary({ result }: { result: SaleDetailResponse }) {
             saved.
           </p>
         </div>
-        <ReceiptText className="h-7 w-7 text-success" />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <SalesDocumentPrint
+            sale={result}
+            context={context}
+            documentType="receipt"
+          />
+          <ReceiptText className="h-7 w-7 text-success" />
+        </div>
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -1281,11 +1299,13 @@ function SalesHistoryCard({
 function SaleDetailDrawer({
   detail,
   summary,
+  context,
   isLoading,
   onClose,
 }: {
   detail: SaleDetailResponse | null;
   summary: SaleSummary | null;
+  context: CurrentUserResponse;
   isLoading: boolean;
   onClose: () => void;
 }) {
@@ -1323,14 +1343,27 @@ function SaleDetailDrawer({
               {customerName} — {money(totalCents)}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded-2xl border border-border bg-surface p-2 text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
-            aria-label="Close sale details"
-          >
-            <X className="h-5 w-5" />
-          </button>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {detail ? (
+              <SalesDocumentPrint
+                sale={detail}
+                context={context}
+                documentType="receipt"
+                buttonLabel="Print"
+                compact
+              />
+            ) : null}
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-2xl border border-border bg-surface p-2 text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+              aria-label="Close sale details"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4 p-4 sm:p-5">

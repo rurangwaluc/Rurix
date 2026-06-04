@@ -3,6 +3,7 @@ import { env, isProduction } from "@rurix/config";
 
 import Fastify from "fastify";
 import { authRoutes } from "./modules/auth/auth.routes";
+import { businessSettingsRoutes } from "./modules/settings/business-settings.routes";
 import { cashDrawerRoutes } from "./modules/cash-drawer/cash-drawer.routes";
 import { catalogRoutes } from "./modules/catalog/catalog.routes";
 import cookie from "@fastify/cookie";
@@ -80,6 +81,10 @@ export async function createApp() {
 
   await app.register(cashDrawerRoutes, {
     prefix: "/cash-drawer",
+  });
+
+  await app.register(businessSettingsRoutes, {
+    prefix: "/settings",
   });
 
   await app.register(locationsRoutes, {
