@@ -1,8 +1,13 @@
 "use client";
 
-import { Printer } from "lucide-react";
+import { useState } from "react";
+import { Loader2, Printer } from "lucide-react";
 
 import { type CurrentUserResponse } from "../../lib/api";
+import {
+  getBusinessDocumentSettings,
+  type BusinessDocumentSettings,
+} from "../../lib/business-settings-api";
 import {
   type SaleDetailResponse,
   type SalePaymentMethod,
@@ -35,6 +40,30 @@ type BusinessIdentity = {
   }>;
 };
 
+type DocumentTotals = {
+  subtotalLabel: string;
+  subtotalCents: number;
+  taxLabel: string;
+  taxCents: number;
+  totalCents: number;
+  paidCents: number;
+  balanceCents: number;
+  shouldShowTax: boolean;
+};
+
+const defaultDocumentSettings: BusinessDocumentSettings = {
+  businessId: "",
+  taxLabel: "VAT",
+  taxRatePercent: 18,
+  taxRateBasisPoints: 1800,
+  taxMode: "included_in_prices",
+  showTaxOnReceipts: true,
+  showTaxOnInvoices: true,
+  businessTin: null,
+  createdAt: "",
+  updatedAt: "",
+};
+
 export function SalesDocumentPrint({
   sale,
   context,
@@ -42,31 +71,59 @@ export function SalesDocumentPrint({
   buttonLabel,
   compact = false,
 }: SalesDocumentPrintProps) {
+  const [isPreparing, setIsPreparing] = useState(false);
+
   const documentLabel = getDocumentLabel(documentType);
   const label = buttonLabel || `Print ${documentLabel.toLowerCase()}`;
 
-  function handlePrint() {
-    printDocument(
-      `${documentLabel}-${getDocumentNumber(sale, documentType)}`,
-      buildSalesDocumentHtml({
-        sale,
-        context,
-        documentType,
-      }),
-    );
+  async function handlePrint() {
+    setIsPreparing(true);
+
+    try {
+      const result = await getBusinessDocumentSettings();
+
+      printDocument(
+        `${documentLabel}-${getDocumentNumber(sale, documentType)}`,
+        buildSalesDocumentHtml({
+          sale,
+          context,
+          documentType,
+          settings: result.settings,
+        }),
+      );
+    } catch {
+      printDocument(
+        `${documentLabel}-${getDocumentNumber(sale, documentType)}`,
+        buildSalesDocumentHtml({
+          sale,
+          context,
+          documentType,
+          settings: defaultDocumentSettings,
+        }),
+      );
+    } finally {
+      setIsPreparing(false);
+    }
   }
 
   return (
     <button
       type="button"
       onClick={handlePrint}
+      disabled={isPreparing}
       className={[
-        "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background font-black text-foreground shadow-soft transition hover:border-primary/50",
+        "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background font-black text-foreground shadow-soft transition hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-60",
         compact ? "px-3 py-2 text-xs" : "px-4 py-3 text-sm",
       ].join(" ")}
     >
-      <Printer className={compact ? "h-4 w-4" : "h-5 w-5"} />
-      {label}
+      {isPreparing ? (
+        <Loader2
+          className={compact ? "h-4 w-4 animate-spin" : "h-5 w-5 animate-spin"}
+        />
+      ) : (
+        <Printer className={compact ? "h-4 w-4" : "h-5 w-5"} />
+      )}
+      {isPreparing ? "Preparing..." : label}
     </button>
   );
 }
@@ -75,10 +132,12 @@ function buildSalesDocumentHtml({
   sale,
   context,
   documentType,
+  settings,
 }: {
   sale: SaleDetailResponse;
   context: CurrentUserResponse;
   documentType: SalesDocumentType;
+  settings: BusinessDocumentSettings;
 }) {
   const biz = getBusinessIdentity(context, sale);
   const documentLabel = getDocumentLabel(documentType);
@@ -89,6 +148,13 @@ function buildSalesDocumentHtml({
   const completedAt = sale.sale.completedAt
     ? formatDateTime(sale.sale.completedAt)
     : "Not shown";
+
+  const documentTin = clean(settings.businessTin) || biz.tin;
+  const totals = buildDocumentTotals({
+    sale,
+    documentType,
+    settings,
+  });
 
   const rows = sale.items
     .map((item, index) => {
@@ -150,9 +216,9 @@ function buildSalesDocumentHtml({
           biz.website,
         )}</span></div>`
       : "",
-    biz.tin
+    documentTin
       ? `<div class="contact-row"><strong>TIN</strong><span>${esc(
-          biz.tin,
+          documentTin,
         )}</span></div>`
       : "",
     biz.momoCode
@@ -204,6 +270,8 @@ function buildSalesDocumentHtml({
       `
       : "";
 
+  const totalRows = buildTotalRows(totals);
+
   return `
     <!doctype html>
     <html>
@@ -231,7 +299,7 @@ function buildSalesDocumentHtml({
             min-height: 297mm;
             margin: 0 auto;
             background: #ffffff;
-            padding: ${isReceipt ? "10mm 11mm 11mm" : "14mm 14mm 16mm"};
+            padding: ${isReceipt ? "7mm 8mm 8mm" : "14mm 14mm 16mm"};
             box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
           }
 
@@ -239,31 +307,31 @@ function buildSalesDocumentHtml({
             height: ${isReceipt ? "5px" : "6px"};
             border-radius: 999px;
             background: #0f172a;
-            margin-bottom: ${isReceipt ? "12px" : "18px"};
+            margin-bottom: ${isReceipt ? "8px" : "18px"};
           }
 
           .header {
             display: grid;
             grid-template-columns: minmax(0, 1fr) ${isReceipt ? "190px" : "210px"};
-            gap: ${isReceipt ? "12px" : "18px"};
+            gap: ${isReceipt ? "9px" : "18px"};
             align-items: start;
-            padding-bottom: ${isReceipt ? "12px" : "18px"};
+            padding-bottom: ${isReceipt ? "8px" : "18px"};
             border-bottom: 1px solid #dbe2ea;
           }
 
           .brand-wrap {
             display: flex;
             align-items: flex-start;
-            gap: ${isReceipt ? "12px" : "16px"};
+            gap: ${isReceipt ? "9px" : "16px"};
             min-width: 0;
           }
 
           .logo-shell {
-            width: ${isReceipt ? "74px" : "96px"};
-            height: ${isReceipt ? "74px" : "96px"};
-            min-width: ${isReceipt ? "74px" : "96px"};
+            width: ${isReceipt ? "54px" : "96px"};
+            height: ${isReceipt ? "54px" : "96px"};
+            min-width: ${isReceipt ? "54px" : "96px"};
             border: 1px solid #dbe2ea;
-            border-radius: ${isReceipt ? "18px" : "22px"};
+            border-radius: ${isReceipt ? "14px" : "22px"};
             background: #ffffff;
             display: flex;
             align-items: center;
@@ -279,14 +347,14 @@ function buildSalesDocumentHtml({
           }
 
           .logo-fallback {
-            padding: 8px;
+            padding: 6px;
             text-align: center;
-            font-size: ${isReceipt ? "9px" : "10px"};
+            font-size: ${isReceipt ? "7px" : "10px"};
             font-weight: 900;
-            letter-spacing: 0.14em;
+            letter-spacing: 0.12em;
             text-transform: uppercase;
             color: #475569;
-            line-height: 1.35;
+            line-height: 1.25;
           }
 
           .brand-copy {
@@ -294,7 +362,7 @@ function buildSalesDocumentHtml({
           }
 
           .doc-kicker {
-            font-size: 10px;
+            font-size: ${isReceipt ? "8px" : "10px"};
             font-weight: 900;
             letter-spacing: 0.18em;
             text-transform: uppercase;
@@ -302,9 +370,9 @@ function buildSalesDocumentHtml({
           }
 
           .branch-name {
-            margin: ${isReceipt ? "6px 0 0" : "8px 0 0"};
-            font-size: ${isReceipt ? "19px" : "22px"};
-            line-height: 1.08;
+            margin: ${isReceipt ? "4px 0 0" : "8px 0 0"};
+            font-size: ${isReceipt ? "16px" : "22px"};
+            line-height: 1.05;
             font-weight: 900;
             letter-spacing: -0.03em;
             color: #0f172a;
@@ -312,25 +380,25 @@ function buildSalesDocumentHtml({
           }
 
           .company-name {
-            margin-top: 5px;
-            font-size: 12px;
-            line-height: 1.45;
+            margin-top: ${isReceipt ? "3px" : "5px"};
+            font-size: ${isReceipt ? "9.5px" : "12px"};
+            line-height: 1.35;
             color: #475569;
             font-weight: 700;
           }
 
           .contact-lines {
-            margin-top: ${isReceipt ? "9px" : "14px"};
+            margin-top: ${isReceipt ? "5px" : "14px"};
             display: grid;
-            gap: ${isReceipt ? "3px" : "5px"};
-            font-size: ${isReceipt ? "11px" : "12px"};
-            line-height: 1.45;
+            gap: ${isReceipt ? "1px" : "5px"};
+            font-size: ${isReceipt ? "9px" : "12px"};
+            line-height: ${isReceipt ? "1.25" : "1.45"};
             color: #334155;
           }
 
           .contact-row {
             display: grid;
-            grid-template-columns: 74px minmax(0, 1fr);
+            grid-template-columns: ${isReceipt ? "56px" : "74px"} minmax(0, 1fr);
             gap: 8px;
           }
 
@@ -345,17 +413,17 @@ function buildSalesDocumentHtml({
 
           .meta-panel {
             border: 1px solid #dbe2ea;
-            border-radius: 16px;
+            border-radius: ${isReceipt ? "12px" : "16px"};
             background: #f8fafc;
             overflow: hidden;
             min-width: 180px;
           }
 
           .meta-row {
-            padding: ${isReceipt ? "8px 10px" : "11px 13px"};
+            padding: ${isReceipt ? "5px 8px" : "11px 13px"};
             border-bottom: 1px solid #e2e8f0;
-            font-size: ${isReceipt ? "11px" : "12px"};
-            line-height: 1.35;
+            font-size: ${isReceipt ? "9px" : "12px"};
+            line-height: 1.25;
             color: #0f172a;
           }
 
@@ -367,7 +435,7 @@ function buildSalesDocumentHtml({
             display: block;
             color: #64748b;
             font-weight: 800;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
           }
 
           .meta-row .value {
@@ -380,29 +448,29 @@ function buildSalesDocumentHtml({
           .section-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: ${isReceipt ? "10px" : "14px"};
-            margin-top: ${isReceipt ? "12px" : "18px"};
+            gap: ${isReceipt ? "7px" : "14px"};
+            margin-top: ${isReceipt ? "8px" : "18px"};
           }
 
           .card {
             border: 1px solid #dbe2ea;
-            border-radius: 16px;
-            padding: ${isReceipt ? "10px 12px" : "14px"};
+            border-radius: ${isReceipt ? "12px" : "16px"};
+            padding: ${isReceipt ? "7px 9px" : "14px"};
             background: #ffffff;
           }
 
           .card-title {
-            font-size: 10px;
+            font-size: ${isReceipt ? "8px" : "10px"};
             font-weight: 900;
             letter-spacing: 0.14em;
             text-transform: uppercase;
             color: #64748b;
-            margin-bottom: ${isReceipt ? "7px" : "10px"};
+            margin-bottom: ${isReceipt ? "4px" : "10px"};
           }
 
           .line {
-            font-size: ${isReceipt ? "12px" : "13px"};
-            line-height: 1.5;
+            font-size: ${isReceipt ? "9.5px" : "13px"};
+            line-height: ${isReceipt ? "1.32" : "1.5"};
             color: #0f172a;
           }
 
@@ -421,9 +489,9 @@ function buildSalesDocumentHtml({
           table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: ${isReceipt ? "12px" : "18px"};
+            margin-top: ${isReceipt ? "8px" : "18px"};
             border: 1px solid #dbe2ea;
-            border-radius: 16px;
+            border-radius: ${isReceipt ? "12px" : "16px"};
             overflow: hidden;
           }
 
@@ -443,19 +511,19 @@ function buildSalesDocumentHtml({
           thead th {
             background: #f8fafc;
             color: #0f172a;
-            font-size: ${isReceipt ? "9px" : "11px"};
+            font-size: ${isReceipt ? "8px" : "11px"};
             font-weight: 900;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            padding: ${isReceipt ? "8px 8px" : "12px 10px"};
+            padding: ${isReceipt ? "5px 6px" : "12px 10px"};
             text-align: left;
             border-bottom: 1px solid #e2e8f0;
           }
 
           tbody td {
-            padding: ${isReceipt ? "8px 8px" : "12px 10px"};
-            font-size: ${isReceipt ? "11px" : "13px"};
-            line-height: 1.4;
+            padding: ${isReceipt ? "5px 6px" : "12px 10px"};
+            font-size: ${isReceipt ? "9.5px" : "13px"};
+            line-height: ${isReceipt ? "1.25" : "1.4"};
             border-bottom: 1px solid #e2e8f0;
             vertical-align: top;
             color: #0f172a;
@@ -467,8 +535,8 @@ function buildSalesDocumentHtml({
 
           .table-subline {
             display: block;
-            margin-top: 3px;
-            font-size: ${isReceipt ? "9px" : "10px"};
+            margin-top: 2px;
+            font-size: ${isReceipt ? "8px" : "10px"};
             font-weight: 800;
             color: #64748b;
           }
@@ -479,17 +547,17 @@ function buildSalesDocumentHtml({
 
           .summary-row {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "300px" : "360px"};
+            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "255px" : "360px"};
             gap: 14px;
             align-items: start;
-            margin-top: ${isReceipt ? "12px" : "18px"};
+            margin-top: ${isReceipt ? "8px" : "18px"};
           }
 
           .totals {
             width: 100%;
             border: 1px solid #dbe2ea;
-            border-radius: 16px;
-            padding: ${isReceipt ? "9px 12px" : "14px 16px"};
+            border-radius: ${isReceipt ? "12px" : "16px"};
+            padding: ${isReceipt ? "6px 9px" : "14px 16px"};
             background: #ffffff;
           }
 
@@ -497,9 +565,9 @@ function buildSalesDocumentHtml({
             display: flex;
             justify-content: space-between;
             gap: 12px;
-            padding: ${isReceipt ? "5px 0" : "8px 0"};
+            padding: ${isReceipt ? "3px 0" : "8px 0"};
             border-bottom: 1px solid #e2e8f0;
-            font-size: ${isReceipt ? "12px" : "14px"};
+            font-size: ${isReceipt ? "9.5px" : "14px"};
           }
 
           .total-row:last-child {
@@ -507,13 +575,13 @@ function buildSalesDocumentHtml({
           }
 
           .total-row.grand {
-            font-size: ${isReceipt ? "15px" : "18px"};
+            font-size: ${isReceipt ? "12px" : "18px"};
             font-weight: 900;
             color: #0f172a;
           }
 
           .payment-section {
-            margin-top: ${isReceipt ? "12px" : "18px"};
+            margin-top: ${isReceipt ? "8px" : "18px"};
           }
 
           .payment-section table {
@@ -533,9 +601,9 @@ function buildSalesDocumentHtml({
           }
 
           .signatures {
-            margin-top: ${isReceipt ? "14px" : "22px"};
+            margin-top: ${isReceipt ? "8px" : "22px"};
             display: grid;
-            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "190px" : "220px"};
+            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "160px" : "220px"};
             gap: 14px;
             align-items: stretch;
             break-inside: avoid;
@@ -544,10 +612,10 @@ function buildSalesDocumentHtml({
 
           .signature-card {
             border: 1px solid #dbe2ea;
-            border-radius: 18px;
+            border-radius: ${isReceipt ? "12px" : "18px"};
             background: #ffffff;
-            padding: ${isReceipt ? "12px" : "16px"};
-            min-height: ${isReceipt ? "98px" : "150px"};
+            padding: ${isReceipt ? "8px" : "16px"};
+            min-height: ${isReceipt ? "64px" : "150px"};
             display: flex;
             flex-direction: column;
             break-inside: avoid;
@@ -556,7 +624,7 @@ function buildSalesDocumentHtml({
 
           .signature-title,
           .stamp-title {
-            font-size: 9px;
+            font-size: ${isReceipt ? "7.5px" : "9px"};
             font-weight: 900;
             letter-spacing: 0.16em;
             text-transform: uppercase;
@@ -565,17 +633,17 @@ function buildSalesDocumentHtml({
 
           .signature-space {
             flex: 1;
-            min-height: ${isReceipt ? "34px" : "68px"};
+            min-height: ${isReceipt ? "18px" : "68px"};
           }
 
           .signature-line {
-            margin-top: 8px;
+            margin-top: ${isReceipt ? "4px" : "8px"};
             border-top: 1px solid #0f172a;
-            padding-top: 7px;
-            font-size: ${isReceipt ? "12px" : "13px"};
+            padding-top: ${isReceipt ? "4px" : "7px"};
+            font-size: ${isReceipt ? "9.5px" : "13px"};
             font-weight: 700;
             color: #0f172a;
-            min-height: 24px;
+            min-height: ${isReceipt ? "16px" : "24px"};
           }
 
           .signature-meta {
@@ -606,10 +674,10 @@ function buildSalesDocumentHtml({
 
           .stamp-card {
             border: 1px dashed #94a3b8;
-            border-radius: 18px;
+            border-radius: ${isReceipt ? "12px" : "18px"};
             background: #f8fafc;
-            min-height: ${isReceipt ? "98px" : "150px"};
-            padding: ${isReceipt ? "12px" : "16px"};
+            min-height: ${isReceipt ? "64px" : "150px"};
+            padding: ${isReceipt ? "8px" : "16px"};
             display: flex;
             flex-direction: column;
             break-inside: avoid;
@@ -622,10 +690,10 @@ function buildSalesDocumentHtml({
             align-items: center;
             justify-content: center;
             color: #94a3b8;
-            font-size: ${isReceipt ? "11px" : "12px"};
+            font-size: ${isReceipt ? "8.5px" : "12px"};
             font-weight: 700;
             text-align: center;
-            padding: 10px;
+            padding: ${isReceipt ? "4px" : "10px"};
           }
 
           .avoid-break {
@@ -655,7 +723,7 @@ function buildSalesDocumentHtml({
 
             @page {
               size: A4;
-              margin: ${isReceipt ? "8mm" : "12mm"};
+              margin: ${isReceipt ? "6mm" : "12mm"};
             }
           }
         </style>
@@ -708,7 +776,7 @@ function buildSalesDocumentHtml({
               <div class="meta-row">
                 <span class="label">Payment status</span>
                 <span class="value">${
-                  sale.sale.balanceCents === 0 ? "Fully paid" : "Balance due"
+                  totals.balanceCents === 0 ? "Fully paid" : "Balance due"
                 }</span>
               </div>
             </div>
@@ -734,15 +802,15 @@ function buildSalesDocumentHtml({
           <table>
             <thead>
               <tr>
-                <th style="width:48px;">#</th>
+                <th style="width:42px;">#</th>
                 <th>Item</th>
-                <th style="width:80px;" class="right">Qty</th>
+                <th style="width:62px;" class="right">Qty</th>
                 ${
                   isDeliveryNote
                     ? ""
                     : `
-                      <th style="width:135px;" class="right">Unit Price</th>
-                      <th style="width:145px;" class="right">Line Total</th>
+                      <th style="width:108px;" class="right">Unit Price</th>
+                      <th style="width:118px;" class="right">Line Total</th>
                     `
                 }
               </tr>
@@ -764,18 +832,7 @@ function buildSalesDocumentHtml({
                 <div class="summary-row avoid-break">
                   <div></div>
                   <div class="totals">
-                    <div class="total-row">
-                      <span>Total</span>
-                      <strong>${esc(moneyLine(sale.sale.totalCents))}</strong>
-                    </div>
-                    <div class="total-row">
-                      <span>Paid</span>
-                      <strong>${esc(moneyLine(sale.sale.paidCents))}</strong>
-                    </div>
-                    <div class="total-row grand">
-                      <span>Balance</span>
-                      <strong>${esc(moneyLine(sale.sale.balanceCents))}</strong>
-                    </div>
+                    ${totalRows}
                   </div>
                 </div>
 
@@ -841,6 +898,121 @@ function buildSalesDocumentHtml({
         </script>
       </body>
     </html>
+  `;
+}
+
+function buildDocumentTotals({
+  sale,
+  documentType,
+  settings,
+}: {
+  sale: SaleDetailResponse;
+  documentType: SalesDocumentType;
+  settings: BusinessDocumentSettings;
+}): DocumentTotals {
+  const shouldShowTax =
+    settings.taxMode !== "no_tax" &&
+    ((documentType === "receipt" && settings.showTaxOnReceipts) ||
+      ((documentType === "invoice" || documentType === "proforma") &&
+        settings.showTaxOnInvoices));
+
+  const taxRateBasisPoints = Math.max(0, settings.taxRateBasisPoints || 0);
+  const taxLabel = `${settings.taxLabel || "Tax"} ${formatTaxRate(
+    taxRateBasisPoints,
+  )}`;
+
+  if (!shouldShowTax || taxRateBasisPoints === 0) {
+    return {
+      subtotalLabel: "Total",
+      subtotalCents: sale.sale.totalCents,
+      taxLabel,
+      taxCents: 0,
+      totalCents: sale.sale.totalCents,
+      paidCents: sale.sale.paidCents,
+      balanceCents: sale.sale.balanceCents,
+      shouldShowTax: false,
+    };
+  }
+
+  if (settings.taxMode === "added_on_top") {
+    const subtotalCents = Math.max(
+      0,
+      sale.sale.subtotalCents - sale.sale.discountCents,
+    );
+
+    const taxCents = Math.round((subtotalCents * taxRateBasisPoints) / 10000);
+    const totalCents = subtotalCents + taxCents;
+    const balanceCents = totalCents - sale.sale.paidCents;
+
+    return {
+      subtotalLabel: "Subtotal",
+      subtotalCents,
+      taxLabel,
+      taxCents,
+      totalCents,
+      paidCents: sale.sale.paidCents,
+      balanceCents,
+      shouldShowTax: true,
+    };
+  }
+
+  const totalCents = sale.sale.totalCents;
+  const taxCents = Math.round(
+    (totalCents * taxRateBasisPoints) / (10000 + taxRateBasisPoints),
+  );
+  const subtotalCents = totalCents - taxCents;
+
+  return {
+    subtotalLabel: `Subtotal before ${settings.taxLabel || "tax"}`,
+    subtotalCents,
+    taxLabel,
+    taxCents,
+    totalCents,
+    paidCents: sale.sale.paidCents,
+    balanceCents: sale.sale.balanceCents,
+    shouldShowTax: true,
+  };
+}
+
+function buildTotalRows(totals: DocumentTotals) {
+  if (!totals.shouldShowTax) {
+    return `
+      <div class="total-row">
+        <span>Total</span>
+        <strong>${esc(moneyLine(totals.totalCents))}</strong>
+      </div>
+      <div class="total-row">
+        <span>Paid</span>
+        <strong>${esc(moneyLine(totals.paidCents))}</strong>
+      </div>
+      <div class="total-row grand">
+        <span>Balance</span>
+        <strong>${esc(moneyLine(totals.balanceCents))}</strong>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="total-row">
+      <span>${esc(totals.subtotalLabel)}</span>
+      <strong>${esc(moneyLine(totals.subtotalCents))}</strong>
+    </div>
+    <div class="total-row">
+      <span>${esc(totals.taxLabel)}</span>
+      <strong>${esc(moneyLine(totals.taxCents))}</strong>
+    </div>
+    <div class="total-row grand">
+      <span>Total</span>
+      <strong>${esc(moneyLine(totals.totalCents))}</strong>
+    </div>
+    <div class="total-row">
+      <span>Paid</span>
+      <strong>${esc(moneyLine(totals.paidCents))}</strong>
+    </div>
+    <div class="total-row">
+      <span>Balance</span>
+      <strong>${esc(moneyLine(totals.balanceCents))}</strong>
+    </div>
   `;
 }
 
@@ -1048,6 +1220,12 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatTaxRate(value: number) {
+  const rate = value / 100;
+
+  return `${Number.isInteger(rate) ? rate.toFixed(0) : rate.toFixed(2)}%`;
 }
 
 function moneyLine(value: number) {
