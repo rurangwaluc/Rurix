@@ -32,6 +32,7 @@ import { StaffView } from "../../components/app/staff-view";
 import { StockView } from "../../components/app/stock-view";
 import { LocationsView } from "../../components/app/locations-view";
 import { PosView } from "../../components/app/pos-view";
+import { SettingsView } from "../../components/app/settings/settings-view";
 import {
   buildAppAccess,
   canOpenSection,
@@ -773,15 +774,21 @@ export default function AppPage() {
                 />
               ) : null}
 
+              {activeSection === "settings" &&
+              canOpenSection(access, "settings") ? (
+                <SettingsView context={context} appAccess={access} />
+              ) : null}
+
               {activeSection !== "dashboard" &&
               activeSection !== "sales" &&
               activeSection !== "staff" &&
               activeSection !== "stock" &&
-              activeSection !== "locations" ? (
+              activeSection !== "locations" &&
+              activeSection !== "settings" ? (
                 canOpenSection(access, activeSection) ? (
-                  <ComingSoonView section={activeSection} />
+                  <UnavailableSectionView section={activeSection} />
                 ) : (
-                  <ComingSoonView section={access.defaultSection} />
+                  <UnavailableSectionView section={access.defaultSection} />
                 )
               ) : null}
             </main>
@@ -792,17 +799,16 @@ export default function AppPage() {
   );
 }
 
-function ComingSoonView({ section }: { section: AppSection }) {
+function UnavailableSectionView({ section }: { section: AppSection }) {
   return (
     <section className="rounded-section bg-surface p-6 shadow-card">
-      <StatusBadge variant="warning">Coming next</StatusBadge>
+      <StatusBadge variant="warning">Not available</StatusBadge>
       <h2 className="mt-4 text-2xl font-extrabold">
-        {formatSectionName(section)} will be built after the current phase.
+        {formatSectionName(section)} is not available for this workspace yet.
       </h2>
       <p className="mt-3 max-w-2xl text-sm font-semibold leading-7 text-muted-foreground">
-        We are building Rurix feature by feature so every area has proper
-        backend rules, web screens, loading states, and business-friendly
-        wording.
+        This area needs the correct business rules, access control, loading
+        states, and clean owner-friendly screens before it is shown here.
       </p>
     </section>
   );
