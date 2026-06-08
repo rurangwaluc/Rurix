@@ -463,7 +463,7 @@ export function PosView({ context }: PosViewProps) {
               Sales access needed
             </h2>
             <p className="mt-1 text-sm font-semibold leading-6 text-warning">
-              You can sign in, but this account cannot create sales from POS.
+              This account can sign in, but it cannot create sales.
             </p>
           </div>
         </div>
@@ -472,82 +472,74 @@ export function PosView({ context }: PosViewProps) {
   }
 
   return (
-    <section className="space-y-4">
-      <section className="overflow-hidden rounded-section border border-border bg-surface shadow-card">
-        <div className="relative p-4 sm:p-5">
-          <div className="absolute right-0 top-0 h-36 w-36 rounded-full bg-primary/10 blur-3xl" />
-          <div className="relative grid gap-5 xl:grid-cols-[1fr_auto] xl:items-center">
-            <div>
-              <StatusBadge variant="primary">Sales / POS</StatusBadge>
-              <h1 className="mt-3 text-2xl font-black sm:text-3xl">
-                Create a sale
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-muted-foreground">
-                Choose the selling location, search products, record payment,
-                and confirm the sale. Stock reduces only after confirmation.
-              </p>
-              <p className="mt-2 max-w-2xl text-xs font-bold leading-5 text-muted-foreground">
-                Built for busy counters: show 12 products by default, 20 during
-                search, and keep the cart visible on larger screens.
-              </p>
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[620px] xl:grid-cols-4">
-              <SummaryCard label="Cart items" value={cartQuantity} />
-              <SummaryCard label="Products shown" value={products.length} />
-              <SummaryCard
-                label="Cash drawer"
-                value={isCashDrawerOpen ? "Open" : "Closed"}
-              />
-              <SummaryCard label="Sale total" value={money(subtotalCents)} />
-            </div>
+    <section className="space-y-3">
+      <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+          <div>
+            <StatusBadge variant="primary">Sales</StatusBadge>
+            <h1 className="mt-3 text-2xl font-black tracking-[-0.03em] sm:text-3xl">
+              Create a sale
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-muted-foreground">
+              Search a product, add it to the cart, choose payment, then confirm
+              the sale.
+            </p>
           </div>
 
-          <div className="relative mt-5 grid gap-3 lg:grid-cols-[280px_1fr_190px]">
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
-                Selling location
-              </span>
-              <select
-                value={selectedBranchId}
-                onChange={(event) => {
-                  setSelectedBranchId(event.target.value);
-                  setCashDrawerSession(null);
-                }}
-                className="mt-2 w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm font-bold outline-none focus:border-primary"
-              >
-                {accessibleBranches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
+            <SummaryCard label="Cart" value={`${cartQuantity} item(s)`} />
+            <SummaryCard
+              label="Drawer"
+              value={isCashDrawerOpen ? "Open" : "Closed"}
+            />
+            <SummaryCard label="Total" value={money(subtotalCents)} />
+          </div>
+        </div>
 
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
-                Search products
-              </span>
-              <div className="mt-2 flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-3">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search name, code, or scan barcode"
-                  className="w-full bg-transparent text-sm font-bold outline-none"
-                />
-              </div>
-            </label>
-
-            <button
-              type="button"
-              onClick={() => void reloadPos()}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-black text-foreground transition hover:border-primary/50 lg:self-end"
+        <div className="mt-4 grid gap-3 lg:grid-cols-[250px_minmax(0,1fr)_140px]">
+          <label className="block min-w-0">
+            <span className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
+              Selling location
+            </span>
+            <select
+              value={selectedBranchId}
+              onChange={(event) => {
+                setSelectedBranchId(event.target.value);
+                setCashDrawerSession(null);
+              }}
+              className="mt-2 w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm font-bold outline-none focus:border-primary"
             >
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </button>
-          </div>
+              {accessibleBranches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block min-w-0">
+            <span className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
+              Product search
+            </span>
+            <div className="mt-2 flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-3">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Type product name, code, or barcode"
+                className="min-w-0 w-full bg-transparent text-sm font-bold outline-none"
+              />
+            </div>
+          </label>
+
+          <button
+            type="button"
+            onClick={() => void reloadPos()}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-black text-foreground transition hover:border-primary/50 lg:self-end"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </button>
         </div>
       </section>
 
@@ -557,8 +549,8 @@ export function PosView({ context }: PosViewProps) {
       {isLoading ? <PosSkeleton /> : null}
 
       {!isLoading ? (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
-          <section className="space-y-4">
+        <section className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(340px,390px)]">
+          <section className="min-w-0 space-y-3">
             <ProductSearchPanel
               products={products}
               productLimit={productLimit}
@@ -588,7 +580,7 @@ export function PosView({ context }: PosViewProps) {
 
           <form
             onSubmit={handleConfirmSale}
-            className="space-y-4 xl:sticky xl:top-4 xl:self-start"
+            className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:self-start"
           >
             <CartCard
               cart={cart}
@@ -659,107 +651,140 @@ function ProductSearchPanel({
   onAddProduct: (product: PosProduct) => void;
 }) {
   return (
-    <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-black">Fast product search</h2>
+    <section className="min-w-0 overflow-hidden rounded-section border border-border bg-surface shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
+        <div className="min-w-0">
+          <h2 className="text-lg font-black">Products</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-            Showing up to {productLimit} products for {selectedBranchName}. Best
-            sellers appear first, then recently sold products, then product
-            name.
+            Add products from {selectedBranchName}.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge variant="primary">
-            {products.length.toLocaleString()} shown
-          </StatusBadge>
-          <StatusBadge variant="warning">Search-first</StatusBadge>
-        </div>
+
+        <StatusBadge variant="primary">
+          {products.length.toLocaleString()} shown
+        </StatusBadge>
       </div>
 
       {products.length ? (
         <>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-            {products.map((product) => (
-              <ProductSaleCard
-                key={product.id}
-                product={product}
-                availableQuantity={product.quantityAvailable}
-                onAdd={() => onAddProduct(product)}
-              />
-            ))}
+          <div className="hidden border-b border-border bg-background/70 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.45fr)_100px_78px_96px] md:gap-x-3 lg:grid-cols-[minmax(0,1.6fr)_118px_84px_104px] lg:gap-x-4 xl:grid-cols-[minmax(0,1.7fr)_124px_88px_112px]">
+            <div>Product</div>
+            <div className="text-right">Price</div>
+            <div className="text-right">Stock</div>
+            <div className="text-right">Action</div>
+          </div>
+
+          <div>
+            {products.map((product) => {
+              const isAvailable = product.quantityAvailable > 0;
+
+              return (
+                <article
+                  key={product.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (isAvailable) {
+                      onAddProduct(product);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      isAvailable &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
+                      event.preventDefault();
+                      onAddProduct(product);
+                    }
+                  }}
+                  className={[
+                    "border-b border-border px-4 py-2.5 last:border-b-0 sm:px-5 md:grid md:grid-cols-[minmax(0,1.45fr)_100px_78px_96px] md:items-center md:gap-x-3 md:px-4 lg:grid-cols-[minmax(0,1.6fr)_118px_84px_104px] lg:gap-x-4 xl:grid-cols-[minmax(0,1.7fr)_124px_88px_112px]",
+                    isAvailable
+                      ? "cursor-pointer hover:bg-muted/45 focus:bg-muted/45 focus:outline-none"
+                      : "cursor-not-allowed opacity-70",
+                  ].join(" ")}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-foreground">
+                      {product.name}
+                    </p>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold text-muted-foreground">
+                      <span className="max-w-full truncate">
+                        {product.sku || "No code"}
+                      </span>
+                      {product.barcode ? (
+                        <span className="hidden max-w-full truncate lg:inline">
+                          Barcode: {product.barcode}
+                        </span>
+                      ) : null}
+                      {!isAvailable ? (
+                        <span className="rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-warning">
+                          No stock
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-3 md:mt-0 md:block md:text-right">
+                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                      Price
+                    </span>
+                    <span className="whitespace-nowrap text-sm font-black">
+                      {money(product.sellingPriceCents)}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-3 md:mt-0 md:block md:text-right">
+                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                      Stock
+                    </span>
+                    <span
+                      className={[
+                        "whitespace-nowrap text-sm font-black",
+                        isAvailable ? "text-foreground" : "text-warning",
+                      ].join(" ")}
+                    >
+                      {product.quantityAvailable.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 md:mt-0 md:text-right">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onAddProduct(product);
+                      }}
+                      disabled={!isAvailable}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
 
           {products.length >= productLimit ? (
-            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-bold text-primary">
-              Search by name, product code, or barcode to narrow a large catalog
-              without slowing the counter.
+            <div className="border-t border-border bg-background/60 px-4 py-3 text-sm font-bold text-muted-foreground sm:px-5">
+              Use search to find more products quickly.
             </div>
           ) : null}
         </>
       ) : (
-        <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-8 text-center">
-          <PackageCheck className="mx-auto h-8 w-8 text-muted-foreground" />
-          <h3 className="mt-3 text-base font-black">No products found</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-muted-foreground">
-            Try another product name or check stock in this selling location.
-          </p>
+        <div className="p-4 sm:p-5">
+          <div className="rounded-3xl border border-dashed border-border bg-background p-8 text-center">
+            <PackageCheck className="mx-auto h-8 w-8 text-muted-foreground" />
+            <h3 className="mt-3 text-base font-black">No products found</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-muted-foreground">
+              Try another product name or check stock in this selling location.
+            </p>
+          </div>
         </div>
       )}
     </section>
-  );
-}
-
-function ProductSaleCard({
-  product,
-  availableQuantity,
-  onAdd,
-}: {
-  product: PosProduct;
-  availableQuantity: number;
-  onAdd: () => void;
-}) {
-  const isAvailable = availableQuantity > 0;
-
-  return (
-    <article className="min-w-0 rounded-3xl border border-border bg-background p-4 transition hover:border-primary/35 hover:shadow-soft">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="break-words text-base font-black">{product.name}</h3>
-          {product.sku ? (
-            <p className="mt-1 text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
-              {product.sku}
-            </p>
-          ) : null}
-          {product.soldQuantity30Days > 0 ? (
-            <p className="mt-2 text-xs font-bold text-primary">
-              Sold {product.soldQuantity30Days.toLocaleString()} in 30 days
-            </p>
-          ) : null}
-        </div>
-        <StatusBadge variant={isAvailable ? "success" : "warning"}>
-          {isAvailable ? "Available" : "No stock"}
-        </StatusBadge>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <MiniMetric
-          label="Available"
-          value={availableQuantity.toLocaleString()}
-        />
-        <MiniMetric label="Price" value={money(product.sellingPriceCents)} />
-      </div>
-
-      <button
-        type="button"
-        onClick={onAdd}
-        disabled={!isAvailable}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <Plus className="h-4 w-4" />
-        {isAvailable ? "Add to sale" : "No stock here"}
-      </button>
-    </article>
   );
 }
 
@@ -775,15 +800,15 @@ function CartCard({
   onRemove: (itemId: string) => void;
 }) {
   return (
-    <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-black">Sale cart</h2>
+    <section className="min-w-0 rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-black">Cart</h2>
           <p className="mt-1 text-sm font-semibold text-muted-foreground">
-            Confirm products before recording payment.
+            Products to sell now.
           </p>
         </div>
-        <ShoppingCart className="h-6 w-6 text-primary" />
+        <ShoppingCart className="h-6 w-6 shrink-0 text-primary" />
       </div>
 
       {cart.length ? (
@@ -798,22 +823,57 @@ function CartCard({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="break-words text-sm font-black">
+                    <h3 className="break-words text-sm font-black leading-5">
                       {line.name}
                     </h3>
                     {line.sku ? (
-                      <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+                      <p className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
                         {line.sku}
                       </p>
                     ) : null}
                   </div>
+
                   <button
                     type="button"
                     onClick={() => onRemove(line.itemId)}
-                    className="rounded-2xl border border-danger/25 bg-danger/10 p-2 text-danger"
+                    className="shrink-0 rounded-2xl border border-danger/25 bg-danger/10 p-2 text-danger"
                     aria-label="Remove product"
                   >
                     <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface p-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateQuantity(line.itemId, line.quantity - 1)
+                    }
+                    className="rounded-xl border border-border bg-background p-2"
+                    aria-label="Reduce quantity"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+
+                  <div className="min-w-0 text-center">
+                    <p className="text-lg font-black">
+                      {line.quantity.toLocaleString()}
+                    </p>
+                    <p className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                      {line.availableQuantity.toLocaleString()} available
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateQuantity(line.itemId, line.quantity + 1)
+                    }
+                    disabled={isMaxed}
+                    className="rounded-xl border border-border bg-background p-2 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Increase quantity"
+                  >
+                    <Plus className="h-4 w-4" />
                   </button>
                 </div>
 
@@ -827,36 +887,6 @@ function CartCard({
                     value={money(line.unitPriceCents * line.quantity)}
                   />
                 </div>
-
-                <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface p-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdateQuantity(line.itemId, line.quantity - 1)
-                    }
-                    className="rounded-xl border border-border bg-background p-2"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <div className="text-center">
-                    <p className="text-lg font-black">
-                      {line.quantity.toLocaleString()}
-                    </p>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                      {line.availableQuantity.toLocaleString()} available
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdateQuantity(line.itemId, line.quantity + 1)
-                    }
-                    disabled={isMaxed}
-                    className="rounded-xl border border-border bg-background p-2 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
               </article>
             );
           })}
@@ -865,7 +895,9 @@ function CartCard({
             <p className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
               Total to pay
             </p>
-            <p className="mt-2 text-2xl font-black">{money(subtotalCents)}</p>
+            <p className="mt-2 whitespace-nowrap text-2xl font-black">
+              {money(subtotalCents)}
+            </p>
           </div>
         </div>
       ) : (
@@ -873,7 +905,7 @@ function CartCard({
           <ShoppingCart className="mx-auto h-7 w-7 text-muted-foreground" />
           <h3 className="mt-3 text-base font-black">Cart is empty</h3>
           <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
-            Add products from the list to start a sale.
+            Add a product to start the sale.
           </p>
         </div>
       )}
@@ -911,15 +943,15 @@ function CustomerCard({
   onNewCustomerEmailChange: (value: string) => void;
 }) {
   return (
-    <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <section className="min-w-0 rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-lg font-black">Customer</h2>
           <p className="mt-1 text-sm font-semibold text-muted-foreground">
-            Optional for quick walk-in sales.
+            Use walk-in for quick sales.
           </p>
         </div>
-        <UserPlus className="h-6 w-6 text-primary" />
+        <UserPlus className="h-6 w-6 shrink-0 text-primary" />
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
@@ -936,7 +968,7 @@ function CustomerCard({
               type="button"
               onClick={() => onCustomerModeChange(mode.key)}
               className={[
-                "rounded-2xl border px-3 py-2 text-xs font-black transition",
+                "rounded-2xl border px-2 py-2 text-xs font-black transition",
                 isActive
                   ? "border-primary bg-primary text-primary-foreground shadow-soft"
                   : "border-border bg-background text-foreground hover:border-primary/50",
@@ -1026,16 +1058,15 @@ function PaymentCard({
   onDrawerChanged: (session: CashDrawerSession | null) => void;
 }) {
   return (
-    <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <section className="min-w-0 rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-lg font-black">Payment</h2>
           <p className="mt-1 text-sm font-semibold text-muted-foreground">
-            Choose how the customer paid. Rurix uses the receipt number as the
-            sale reference automatically.
+            Choose payment and confirm.
           </p>
         </div>
-        <CreditCard className="h-6 w-6 text-primary" />
+        <CreditCard className="h-6 w-6 shrink-0 text-primary" />
       </div>
 
       <div className="mt-4 grid gap-3">
@@ -1053,7 +1084,7 @@ function PaymentCard({
                   type="button"
                   onClick={() => onPaymentMethodChange(method.value)}
                   className={[
-                    "rounded-2xl border px-3 py-3 text-sm font-black transition",
+                    "rounded-2xl border px-2 py-3 text-sm font-black transition",
                     isActive
                       ? "border-primary bg-primary text-primary-foreground shadow-soft"
                       : "border-border bg-background text-foreground hover:border-primary/50",
@@ -1064,15 +1095,6 @@ function PaymentCard({
               );
             })}
           </div>
-        </div>
-
-        <div className="rounded-3xl border border-border bg-background p-4">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
-            Payment reference
-          </p>
-          <p className="mt-2 text-sm font-bold leading-6 text-foreground">
-            Created automatically after confirmation using the receipt number.
-          </p>
         </div>
 
         <CashDrawerPanel
@@ -1089,14 +1111,16 @@ function PaymentCard({
           label="Sale note"
           value={saleNotes}
           onChange={onSaleNotesChange}
-          placeholder="Optional note for this sale"
+          placeholder="Optional"
         />
 
         <div className="rounded-3xl border border-primary/20 bg-primary/10 p-4">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
             Amount to record
           </p>
-          <p className="mt-2 text-2xl font-black">{money(totalCents)}</p>
+          <p className="mt-2 whitespace-nowrap text-2xl font-black">
+            {money(totalCents)}
+          </p>
         </div>
 
         <button
@@ -1126,21 +1150,20 @@ function ReceiptSummary({
   return (
     <section className="rounded-section border border-success/25 bg-success/10 p-4 shadow-card sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <StatusBadge variant="success">Sale completed</StatusBadge>
-          <h2 className="mt-3 text-xl font-black text-success">
+          <h2 className="mt-3 break-words text-xl font-black text-success">
             Receipt{" "}
             {result.sale.receiptNumber ||
               result.receipt?.receiptNumber ||
               "created"}
           </h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-success">
-            Stock was reduced from {result.sale.branchName} and the sale was
-            saved.
+            The sale was saved and stock was updated.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <SalesDocumentPrint
             sale={result}
             context={context}
@@ -1157,32 +1180,6 @@ function ReceiptSummary({
           value={result.sale.customerName || "Walk-in customer"}
         />
         <DetailRow label="Total paid" value={money(result.sale.paidCents)} />
-      </div>
-
-      <div className="mt-4 rounded-3xl border border-success/20 bg-background p-4">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
-          Products sold
-        </p>
-        <div className="mt-2 grid gap-2">
-          {result.items.map((item) => (
-            <div
-              key={item.id}
-              className="rounded-2xl border border-border bg-surface p-3"
-            >
-              <p className="text-sm font-black">{item.itemName}</p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <MiniMetric
-                  label="Quantity"
-                  value={item.quantity.toLocaleString()}
-                />
-                <MiniMetric
-                  label="Line total"
-                  value={money(item.lineTotalCents)}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );
@@ -1208,88 +1205,135 @@ function SalesHistoryCard({
   onOpenSale: (sale: SaleSummary) => void;
 }) {
   return (
-    <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-black">Sales history</h2>
+    <section className="min-w-0 overflow-hidden rounded-section border border-border bg-surface shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
+        <div className="min-w-0">
+          <h2 className="text-lg font-black">Recent sales</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-            Showing the latest sales first. Search by receipt, sale number, or
-            customer when the list grows.
+            Open a sale to review or print the receipt.
           </p>
         </div>
+
         <StatusBadge variant="primary">
           {showing.toLocaleString()} of {totalSales.toLocaleString()}
         </StatusBadge>
       </div>
 
-      <label className="mt-4 block">
-        <span className="text-xs font-black uppercase tracking-[0.16em] text-muted-foreground">
-          Search sales
-        </span>
-        <div className="mt-2 flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-3">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            value={saleSearch}
-            onChange={(event) => onSaleSearchChange(event.target.value)}
-            placeholder="Receipt, sale number, or customer"
-            className="w-full bg-transparent text-sm font-bold outline-none"
-          />
-        </div>
-      </label>
+      <div className="border-b border-border px-4 py-3 sm:px-5">
+        <label className="block">
+          <span className="sr-only">Search sales</span>
+          <div className="flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-3">
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <input
+              value={saleSearch}
+              onChange={(event) => onSaleSearchChange(event.target.value)}
+              placeholder="Search receipt, sale number, or customer"
+              className="min-w-0 w-full bg-transparent text-sm font-bold outline-none"
+            />
+          </div>
+        </label>
+      </div>
 
       {sales.length ? (
-        <div className="mt-4 grid gap-3">
-          {sales.map((sale) => (
-            <button
-              key={sale.id}
-              type="button"
-              onClick={() => onOpenSale(sale)}
-              className="w-full rounded-3xl border border-border bg-background p-4 text-left transition hover:border-primary/40 hover:shadow-soft"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-black">
-                    {sale.receiptNumber || sale.saleNumber}
-                  </p>
-                  <p className="mt-1 text-xs font-bold text-muted-foreground">
-                    {sale.customerName || "Walk-in customer"}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-black">{money(sale.totalCents)}</p>
-                  <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
-                    View details
-                  </p>
-                </div>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <MiniMetric
-                  label="Products"
-                  value={sale.itemCount.toLocaleString()}
-                />
-                <MiniMetric label="Paid" value={money(sale.paidCents)} />
-                <MiniMetric label="Location" value={sale.branchName} />
-              </div>
-            </button>
-          ))}
+        <>
+          <div className="hidden border-b border-border bg-background/70 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_94px_76px_72px] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.95fr)_104px_88px_72px]">
+            <div>Receipt</div>
+            <div>Customer</div>
+            <div className="text-right">Total</div>
+            <div className="text-center">Status</div>
+            <div className="text-right">Action</div>
+          </div>
+
+          <div>
+            {sales.map((sale) => {
+              const isPaid = sale.balanceCents === 0;
+
+              return (
+                <article
+                  key={sale.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenSale(sale)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onOpenSale(sale);
+                    }
+                  }}
+                  className="cursor-pointer border-b border-border px-4 py-2.5 last:border-b-0 hover:bg-muted/45 focus:bg-muted/45 focus:outline-none sm:px-5 md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_94px_76px_72px] md:items-center md:px-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.95fr)_104px_88px_72px]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-foreground">
+                      {sale.receiptNumber || sale.saleNumber}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-bold text-muted-foreground">
+                      {sale.itemCount.toLocaleString()} product
+                      {sale.itemCount === 1 ? "" : "s"} · {sale.branchName}
+                    </p>
+                  </div>
+
+                  <div className="mt-2 min-w-0 md:mt-0">
+                    <p className="truncate text-sm font-bold text-foreground">
+                      {sale.customerName || "Walk-in customer"}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-bold text-muted-foreground md:hidden">
+                      Paid: {money(sale.paidCents)}
+                    </p>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-3 md:mt-0 md:block md:text-right">
+                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                      Total
+                    </span>
+                    <span className="whitespace-nowrap text-sm font-black">
+                      {money(sale.totalCents)}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 md:mt-0 md:text-center">
+                    <StatusBadge variant={isPaid ? "success" : "warning"}>
+                      {isPaid ? "Paid" : "Balance"}
+                    </StatusBadge>
+                  </div>
+
+                  <div className="mt-2 md:mt-0 md:text-right">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenSale(sale);
+                      }}
+                      className="inline-flex w-full items-center justify-center rounded-xl border border-border bg-background px-3 py-2 text-xs font-black text-foreground transition hover:border-primary/50 md:w-auto"
+                    >
+                      Open
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
 
           {hasMoreSales ? (
-            <button
-              type="button"
-              onClick={onLoadMore}
-              className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-black text-foreground transition hover:border-primary/50"
-            >
-              Load more sales
-            </button>
+            <div className="border-t border-border bg-background/60 px-4 py-3 sm:px-5">
+              <button
+                type="button"
+                onClick={onLoadMore}
+                className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm font-black text-foreground transition hover:border-primary/50"
+              >
+                Load more
+              </button>
+            </div>
           ) : null}
-        </div>
+        </>
       ) : (
-        <div className="mt-4 rounded-3xl border border-dashed border-border bg-background p-6 text-center">
-          <ReceiptText className="mx-auto h-7 w-7 text-muted-foreground" />
-          <h3 className="mt-3 text-base font-black">No sales found</h3>
-          <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
-            Completed sales for this location will appear here.
-          </p>
+        <div className="p-4 sm:p-5">
+          <div className="rounded-3xl border border-dashed border-border bg-background p-6 text-center">
+            <ReceiptText className="mx-auto h-7 w-7 text-muted-foreground" />
+            <h3 className="mt-3 text-base font-black">No sales found</h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
+              Completed sales for this location will appear here.
+            </p>
+          </div>
         </div>
       )}
     </section>
@@ -1335,7 +1379,7 @@ function SaleDetailDrawer({
         onClick={onClose}
       />
 
-      <aside className="rurix-scrollbar relative flex h-full w-full max-w-xl flex-col overflow-y-auto rounded-[1.4rem] border border-border bg-background shadow-card">
+      <aside className="rurix-scrollbar relative flex h-full w-full max-w-2xl flex-col overflow-y-auto rounded-[1.4rem] border border-border bg-background shadow-card">
         <div className="flex items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-black">{receiptNumber}</p>
@@ -1369,7 +1413,7 @@ function SaleDetailDrawer({
         <div className="space-y-4 p-4 sm:p-5">
           <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <StatusBadge
                   variant={balanceCents === 0 ? "success" : "warning"}
                 >
@@ -1413,102 +1457,35 @@ function SaleDetailDrawer({
 
           {detail ? (
             <>
-              <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-black">Products sold</h3>
-                    <p className="mt-1 text-sm font-semibold text-muted-foreground">
-                      Products that reduced stock on this sale.
-                    </p>
-                  </div>
-                  <StatusBadge variant="primary">
-                    {detail.items.length.toLocaleString()} products
-                  </StatusBadge>
-                </div>
+              <CompactDetailTable
+                title="Products"
+                subtitle="Items sold on this receipt."
+                badge={`${detail.items.length.toLocaleString()} product${
+                  detail.items.length === 1 ? "" : "s"
+                }`}
+                rows={detail.items.map((item) => ({
+                  id: item.id,
+                  title: item.itemName,
+                  subtitle: item.itemSku || "",
+                  leftMeta: `Qty ${item.quantity.toLocaleString()}`,
+                  rightMeta: money(item.unitPriceCents),
+                  total: money(item.lineTotalCents),
+                }))}
+              />
 
-                <div className="mt-4 grid gap-3">
-                  {detail.items.map((item) => (
-                    <article
-                      key={item.id}
-                      className="rounded-3xl border border-border bg-background p-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="break-words text-sm font-black">
-                            {item.itemName}
-                          </p>
-                          {item.itemSku ? (
-                            <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
-                              {item.itemSku}
-                            </p>
-                          ) : null}
-                        </div>
-                        <p className="text-sm font-black">
-                          {money(item.lineTotalCents)}
-                        </p>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                        <MiniMetric
-                          label="Quantity"
-                          value={item.quantity.toLocaleString()}
-                        />
-                        <MiniMetric
-                          label="Unit price"
-                          value={money(item.unitPriceCents)}
-                        />
-                        <MiniMetric
-                          label="Line total"
-                          value={money(item.lineTotalCents)}
-                        />
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-
-              <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-black">Payment</h3>
-                    <p className="mt-1 text-sm font-semibold text-muted-foreground">
-                      Payment records saved with this receipt.
-                    </p>
-                  </div>
-                  <StatusBadge
-                    variant={
-                      detail.sale.balanceCents === 0 ? "success" : "warning"
-                    }
-                  >
-                    {detail.sale.balanceCents === 0
-                      ? "Fully paid"
-                      : "Balance due"}
-                  </StatusBadge>
-                </div>
-
-                <div className="mt-4 grid gap-3">
-                  {detail.payments.map((payment) => (
-                    <article
-                      key={payment.id}
-                      className="rounded-3xl border border-border bg-background p-4"
-                    >
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <MiniMetric
-                          label="Method"
-                          value={formatPaymentMethod(payment.method)}
-                        />
-                        <MiniMetric
-                          label="Amount"
-                          value={money(payment.amountCents)}
-                        />
-                        <MiniMetric
-                          label="Received by"
-                          value={payment.receivedByName || "Not shown"}
-                        />
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
+              <CompactDetailTable
+                title="Payment"
+                subtitle="Payment records saved with this sale."
+                badge={detail.sale.balanceCents === 0 ? "Paid" : "Balance"}
+                rows={detail.payments.map((payment) => ({
+                  id: payment.id,
+                  title: formatPaymentMethod(payment.method),
+                  subtitle: payment.receivedByName || "Not shown",
+                  leftMeta: "Amount",
+                  rightMeta: "",
+                  total: money(payment.amountCents),
+                }))}
+              />
             </>
           ) : null}
         </div>
@@ -1517,16 +1494,73 @@ function SaleDetailDrawer({
   );
 }
 
+function CompactDetailTable({
+  title,
+  subtitle,
+  badge,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  badge: string;
+  rows: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    leftMeta: string;
+    rightMeta: string;
+    total: string;
+  }>;
+}) {
+  return (
+    <section className="overflow-hidden rounded-section border border-border bg-surface shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
+        <div className="min-w-0">
+          <h3 className="text-base font-black">{title}</h3>
+          <p className="mt-1 text-sm font-semibold text-muted-foreground">
+            {subtitle}
+          </p>
+        </div>
+
+        <StatusBadge variant="primary">{badge}</StatusBadge>
+      </div>
+
+      <div>
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_130px] sm:items-center"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-foreground">
+                {row.title}
+              </p>
+              {row.subtitle ? (
+                <p className="mt-1 truncate text-xs font-bold text-muted-foreground">
+                  {row.subtitle}
+                </p>
+              ) : null}
+              <p className="mt-1 truncate text-xs font-bold text-muted-foreground">
+                {[row.leftMeta, row.rightMeta].filter(Boolean).join(" · ")}
+              </p>
+            </div>
+
+            <p className="whitespace-nowrap text-left text-sm font-black sm:text-right">
+              {row.total}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PosSkeleton() {
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
-      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-52 animate-pulse rounded-3xl border border-border bg-surface"
-          />
-        ))}
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(340px,390px)]">
+      <div className="space-y-3">
+        <div className="h-[340px] animate-pulse rounded-section border border-border bg-surface" />
+        <div className="h-[300px] animate-pulse rounded-section border border-border bg-surface" />
       </div>
       <div className="h-[620px] animate-pulse rounded-section border border-border bg-surface" />
     </div>
@@ -1542,7 +1576,7 @@ function SaleDetailSkeleton() {
           {Array.from({ length: 3 }).map((_, index) => (
             <div
               key={index}
-              className="h-20 animate-pulse rounded-3xl border border-border bg-background"
+              className="h-16 animate-pulse rounded-3xl border border-border bg-background"
             />
           ))}
         </div>
@@ -1550,7 +1584,7 @@ function SaleDetailSkeleton() {
 
       <section className="rounded-section border border-border bg-surface p-4 shadow-soft">
         <div className="h-4 w-24 animate-pulse rounded-full bg-muted" />
-        <div className="mt-4 h-28 animate-pulse rounded-3xl border border-border bg-background" />
+        <div className="mt-4 h-24 animate-pulse rounded-3xl border border-border bg-background" />
       </section>
     </div>
   );
@@ -1568,7 +1602,9 @@ function SummaryCard({
       <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-2 truncate text-lg font-black sm:text-xl">{value}</p>
+      <p className="mt-2 truncate whitespace-nowrap text-lg font-black sm:text-xl">
+        {value}
+      </p>
     </div>
   );
 }
@@ -1579,7 +1615,9 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
       <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
         {label}
       </p>
-      <p className="mt-2 truncate text-sm font-black">{value}</p>
+      <p className="mt-2 truncate whitespace-nowrap text-sm font-black">
+        {value}
+      </p>
     </div>
   );
 }

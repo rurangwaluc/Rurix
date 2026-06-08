@@ -44,6 +44,8 @@ type DocumentTotals = {
   subtotalLabel: string;
   subtotalCents: number;
   taxLabel: string;
+  taxRateText: string;
+  taxRateBasisPoints: number;
   taxCents: number;
   totalCents: number;
   paidCents: number;
@@ -156,8 +158,18 @@ function buildSalesDocumentHtml({
     settings,
   });
 
+  const showLineTax = !isDeliveryNote && totals.shouldShowTax;
+
   const rows = sale.items
     .map((item, index) => {
+      const itemTaxCents = showLineTax
+        ? calculateLineTaxCents({
+            lineTotalCents: item.lineTotalCents,
+            taxRateBasisPoints: totals.taxRateBasisPoints,
+            taxMode: settings.taxMode,
+          })
+        : 0;
+
       return `
         <tr>
           <td>${index + 1}</td>
@@ -175,6 +187,14 @@ function buildSalesDocumentHtml({
               ? ""
               : `
                 <td class="right">${esc(moneyLine(item.unitPriceCents))}</td>
+                ${
+                  showLineTax
+                    ? `
+                      <td class="right">${esc(totals.taxRateText)}</td>
+                      <td class="right">${esc(moneyLine(itemTaxCents))}</td>
+                    `
+                    : ""
+                }
                 <td class="right">${esc(moneyLine(item.lineTotalCents))}</td>
               `
           }
@@ -222,7 +242,7 @@ function buildSalesDocumentHtml({
         )}</span></div>`
       : "",
     biz.momoCode
-      ? `<div class="contact-row"><strong>MoMo Code</strong><span>${esc(
+      ? `<div class="contact-row"><strong>MoMo</strong><span>${esc(
           biz.momoCode,
         )}</span></div>`
       : "",
@@ -271,6 +291,16 @@ function buildSalesDocumentHtml({
       : "";
 
   const totalRows = buildTotalRows(totals);
+  const vatSummary = totals.shouldShowTax
+    ? buildVatSummary({
+        taxRateText: totals.taxRateText,
+        subtotalCents: totals.subtotalCents,
+        taxCents: totals.taxCents,
+        taxLabel: settings.taxLabel || "Tax",
+      })
+    : "";
+
+  const tableColumnCount = isDeliveryNote ? 3 : showLineTax ? 7 : 5;
 
   return `
     <!doctype html>
@@ -301,42 +331,76 @@ function buildSalesDocumentHtml({
             background: #ffffff;
             padding: ${isReceipt ? "7mm 8mm 8mm" : "14mm 14mm 16mm"};
             box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+            display: flex;
+            flex-direction: column;
+          }
+
+          .document-main {
+            flex: 1 0 auto;
+            display: flex;
+            flex-direction: column;
+          }
+
+          .document-lower {
+            flex-shrink: 0;
+          }
+
+          .product-fill {
+            flex: 1 1 auto;
+            min-height: ${isReceipt ? "16mm" : "10mm"};
           }
 
           .top-band {
             height: ${isReceipt ? "5px" : "6px"};
             border-radius: 999px;
-            background: #0f172a;
-            margin-bottom: ${isReceipt ? "8px" : "18px"};
+            background: linear-gradient(90deg, #0f172a, #475569, #0f172a);
+            margin-bottom: ${isReceipt ? "7px" : "18px"};
           }
 
           .header {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "190px" : "210px"};
+            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "205px" : "230px"};
             gap: ${isReceipt ? "9px" : "18px"};
-            align-items: start;
+            align-items: stretch;
             padding-bottom: ${isReceipt ? "8px" : "18px"};
-            border-bottom: 1px solid #dbe2ea;
           }
 
-          .brand-wrap {
-            display: flex;
-            align-items: flex-start;
-            gap: ${isReceipt ? "9px" : "16px"};
-            min-width: 0;
+          .brand-panel {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #dbe2ea;
+            border-radius: ${isReceipt ? "14px" : "18px"};
+            background:
+              radial-gradient(circle at top right, rgba(15, 23, 42, 0.08), transparent 30%),
+              linear-gradient(135deg, #ffffff, #f8fafc);
+            padding: ${isReceipt ? "8px 10px" : "14px"};
+            min-height: ${isReceipt ? "66px" : "104px"};
+            display: grid;
+            grid-template-columns: ${isReceipt ? "48px" : "72px"} minmax(0, 1fr) auto;
+            gap: ${isReceipt ? "9px" : "14px"};
+            align-items: center;
+          }
+
+          .brand-panel::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: #0f172a;
           }
 
           .logo-shell {
-            width: ${isReceipt ? "54px" : "96px"};
-            height: ${isReceipt ? "54px" : "96px"};
-            min-width: ${isReceipt ? "54px" : "96px"};
+            width: ${isReceipt ? "48px" : "72px"};
+            height: ${isReceipt ? "48px" : "72px"};
+            min-width: ${isReceipt ? "48px" : "72px"};
             border: 1px solid #dbe2ea;
-            border-radius: ${isReceipt ? "14px" : "22px"};
+            border-radius: ${isReceipt ? "12px" : "18px"};
             background: #ffffff;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
           }
 
           .logo-shell img {
@@ -349,12 +413,12 @@ function buildSalesDocumentHtml({
           .logo-fallback {
             padding: 6px;
             text-align: center;
-            font-size: ${isReceipt ? "7px" : "10px"};
+            font-size: ${isReceipt ? "6.5px" : "9px"};
             font-weight: 900;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: #475569;
-            line-height: 1.25;
+            color: #0f172a;
+            line-height: 1.2;
           }
 
           .brand-copy {
@@ -362,44 +426,65 @@ function buildSalesDocumentHtml({
           }
 
           .doc-kicker {
-            font-size: ${isReceipt ? "8px" : "10px"};
+            font-size: ${isReceipt ? "7px" : "10px"};
             font-weight: 900;
-            letter-spacing: 0.18em;
+            letter-spacing: 0.2em;
             text-transform: uppercase;
             color: #64748b;
           }
 
           .branch-name {
-            margin: ${isReceipt ? "4px 0 0" : "8px 0 0"};
-            font-size: ${isReceipt ? "16px" : "22px"};
-            line-height: 1.05;
-            font-weight: 900;
-            letter-spacing: -0.03em;
+            margin: ${isReceipt ? "3px 0 0" : "7px 0 0"};
+            font-size: ${isReceipt ? "18px" : "27px"};
+            line-height: 1.02;
+            font-weight: 950;
+            letter-spacing: -0.045em;
             color: #0f172a;
             word-break: break-word;
           }
 
           .company-name {
-            margin-top: ${isReceipt ? "3px" : "5px"};
-            font-size: ${isReceipt ? "9.5px" : "12px"};
-            line-height: 1.35;
+            margin-top: ${isReceipt ? "2px" : "5px"};
+            font-size: ${isReceipt ? "9.5px" : "13px"};
+            line-height: 1.25;
             color: #475569;
-            font-weight: 700;
+            font-weight: 800;
+          }
+
+          .document-chip {
+            align-self: start;
+            border: 1px solid #dbe2ea;
+            border-radius: 999px;
+            background: #0f172a;
+            color: #ffffff;
+            padding: ${isReceipt ? "5px 8px" : "7px 10px"};
+            font-size: ${isReceipt ? "7px" : "9px"};
+            font-weight: 950;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            white-space: nowrap;
           }
 
           .contact-lines {
-            margin-top: ${isReceipt ? "5px" : "14px"};
+            grid-column: 2 / 4;
+            margin-top: ${isReceipt ? "2px" : "8px"};
             display: grid;
-            gap: ${isReceipt ? "1px" : "5px"};
-            font-size: ${isReceipt ? "9px" : "12px"};
-            line-height: ${isReceipt ? "1.25" : "1.45"};
+            grid-template-columns: 1fr 1fr;
+            gap: ${isReceipt ? "1px 10px" : "4px 14px"};
+            font-size: ${isReceipt ? "8px" : "11px"};
+            line-height: ${isReceipt ? "1.16" : "1.4"};
             color: #334155;
+          }
+
+          .contact-lines:empty {
+            display: none;
           }
 
           .contact-row {
             display: grid;
-            grid-template-columns: ${isReceipt ? "56px" : "74px"} minmax(0, 1fr);
-            gap: 8px;
+            grid-template-columns: ${isReceipt ? "36px" : "58px"} minmax(0, 1fr);
+            gap: 6px;
+            min-width: 0;
           }
 
           .contact-row strong {
@@ -413,17 +498,18 @@ function buildSalesDocumentHtml({
 
           .meta-panel {
             border: 1px solid #dbe2ea;
-            border-radius: ${isReceipt ? "12px" : "16px"};
+            border-radius: ${isReceipt ? "14px" : "18px"};
             background: #f8fafc;
             overflow: hidden;
             min-width: 180px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
           }
 
           .meta-row {
-            padding: ${isReceipt ? "5px 8px" : "11px 13px"};
+            padding: ${isReceipt ? "5px 9px" : "11px 13px"};
             border-bottom: 1px solid #e2e8f0;
-            font-size: ${isReceipt ? "9px" : "12px"};
-            line-height: 1.25;
+            font-size: ${isReceipt ? "8.5px" : "12px"};
+            line-height: 1.2;
             color: #0f172a;
           }
 
@@ -434,14 +520,17 @@ function buildSalesDocumentHtml({
           .meta-row .label {
             display: block;
             color: #64748b;
-            font-weight: 800;
+            font-weight: 900;
             margin-bottom: 1px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-size: ${isReceipt ? "6.5px" : "9px"};
           }
 
           .meta-row .value {
             display: block;
             color: #0f172a;
-            font-weight: 900;
+            font-weight: 950;
             word-break: break-word;
           }
 
@@ -449,7 +538,7 @@ function buildSalesDocumentHtml({
             display: grid;
             grid-template-columns: 1fr;
             gap: ${isReceipt ? "7px" : "14px"};
-            margin-top: ${isReceipt ? "8px" : "18px"};
+            margin-top: ${isReceipt ? "6px" : "18px"};
           }
 
           .card {
@@ -489,7 +578,7 @@ function buildSalesDocumentHtml({
           table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: ${isReceipt ? "8px" : "18px"};
+            margin-top: ${isReceipt ? "7px" : "18px"};
             border: 1px solid #dbe2ea;
             border-radius: ${isReceipt ? "12px" : "16px"};
             overflow: hidden;
@@ -509,21 +598,21 @@ function buildSalesDocumentHtml({
           }
 
           thead th {
-            background: #f8fafc;
-            color: #0f172a;
-            font-size: ${isReceipt ? "8px" : "11px"};
+            background: #0f172a;
+            color: #ffffff;
+            font-size: ${isReceipt ? "7.5px" : "10px"};
             font-weight: 900;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            padding: ${isReceipt ? "5px 6px" : "12px 10px"};
+            padding: ${isReceipt ? "5px 5px" : "11px 10px"};
             text-align: left;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid #0f172a;
           }
 
           tbody td {
-            padding: ${isReceipt ? "5px 6px" : "12px 10px"};
-            font-size: ${isReceipt ? "9.5px" : "13px"};
-            line-height: ${isReceipt ? "1.25" : "1.4"};
+            padding: ${isReceipt ? "5px 5px" : "11px 10px"};
+            font-size: ${isReceipt ? "9px" : "12px"};
+            line-height: ${isReceipt ? "1.2" : "1.35"};
             border-bottom: 1px solid #e2e8f0;
             vertical-align: top;
             color: #0f172a;
@@ -536,7 +625,7 @@ function buildSalesDocumentHtml({
           .table-subline {
             display: block;
             margin-top: 2px;
-            font-size: ${isReceipt ? "8px" : "10px"};
+            font-size: ${isReceipt ? "7.5px" : "10px"};
             font-weight: 800;
             color: #64748b;
           }
@@ -547,17 +636,53 @@ function buildSalesDocumentHtml({
 
           .summary-row {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "255px" : "360px"};
-            gap: 14px;
+            grid-template-columns: minmax(0, 1fr) ${isReceipt ? "250px" : "360px"};
+            gap: ${isReceipt ? "10px" : "14px"};
             align-items: start;
-            margin-top: ${isReceipt ? "8px" : "18px"};
+            margin-top: ${isReceipt ? "7px" : "18px"};
+          }
+
+          .vat-summary {
+            border: 1px solid #dbe2ea;
+            border-radius: ${isReceipt ? "12px" : "16px"};
+            background: #ffffff;
+            padding: ${isReceipt ? "6px 8px" : "14px"};
+          }
+
+          .vat-summary-title {
+            font-size: ${isReceipt ? "8px" : "10px"};
+            font-weight: 900;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-bottom: ${isReceipt ? "5px" : "10px"};
+          }
+
+          .vat-summary-grid {
+            display: grid;
+            grid-template-columns: 0.7fr 1fr 1fr;
+            gap: 8px;
+            font-size: ${isReceipt ? "8.5px" : "12px"};
+          }
+
+          .vat-summary-grid strong {
+            color: #0f172a;
+            font-weight: 900;
+          }
+
+          .vat-summary-muted {
+            color: #64748b;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: ${isReceipt ? "7px" : "9px"};
           }
 
           .totals {
             width: 100%;
             border: 1px solid #dbe2ea;
             border-radius: ${isReceipt ? "12px" : "16px"};
-            padding: ${isReceipt ? "6px 9px" : "14px 16px"};
+            overflow: hidden;
             background: #ffffff;
           }
 
@@ -565,9 +690,9 @@ function buildSalesDocumentHtml({
             display: flex;
             justify-content: space-between;
             gap: 12px;
-            padding: ${isReceipt ? "3px 0" : "8px 0"};
+            padding: ${isReceipt ? "4px 9px" : "8px 14px"};
             border-bottom: 1px solid #e2e8f0;
-            font-size: ${isReceipt ? "9.5px" : "14px"};
+            font-size: ${isReceipt ? "9px" : "13px"};
           }
 
           .total-row:last-child {
@@ -580,28 +705,29 @@ function buildSalesDocumentHtml({
             color: #0f172a;
           }
 
+          .total-row.total-bar {
+            background: #0f172a;
+            color: #ffffff;
+            border-bottom: 0;
+            padding: ${isReceipt ? "7px 9px" : "12px 14px"};
+            margin-top: 2px;
+          }
+
+          .total-row.total-bar strong,
+          .total-row.total-bar span {
+            color: #ffffff;
+          }
+
           .payment-section {
-            margin-top: ${isReceipt ? "8px" : "18px"};
+            margin-top: ${isReceipt ? "7px" : "18px"};
           }
 
           .payment-section table {
             margin-top: 0;
           }
 
-          .note {
-            margin-top: 14px;
-            border: 1px solid #dbe2ea;
-            border-radius: 16px;
-            padding: 12px 14px;
-            background: #f8fafc;
-            font-size: 12px;
-            line-height: 1.55;
-            white-space: pre-wrap;
-            color: #0f172a;
-          }
-
           .signatures {
-            margin-top: ${isReceipt ? "8px" : "22px"};
+            margin-top: ${isReceipt ? "7px" : "22px"};
             display: grid;
             grid-template-columns: minmax(0, 1fr) ${isReceipt ? "160px" : "220px"};
             gap: 14px;
@@ -615,7 +741,7 @@ function buildSalesDocumentHtml({
             border-radius: ${isReceipt ? "12px" : "18px"};
             background: #ffffff;
             padding: ${isReceipt ? "8px" : "16px"};
-            min-height: ${isReceipt ? "64px" : "150px"};
+            min-height: ${isReceipt ? "62px" : "150px"};
             display: flex;
             flex-direction: column;
             break-inside: avoid;
@@ -633,50 +759,24 @@ function buildSalesDocumentHtml({
 
           .signature-space {
             flex: 1;
-            min-height: ${isReceipt ? "18px" : "68px"};
+            min-height: ${isReceipt ? "17px" : "68px"};
           }
 
           .signature-line {
             margin-top: ${isReceipt ? "4px" : "8px"};
             border-top: 1px solid #0f172a;
             padding-top: ${isReceipt ? "4px" : "7px"};
-            font-size: ${isReceipt ? "9.5px" : "13px"};
+            font-size: ${isReceipt ? "9px" : "13px"};
             font-weight: 700;
             color: #0f172a;
             min-height: ${isReceipt ? "16px" : "24px"};
-          }
-
-          .signature-meta {
-            margin-top: 10px;
-            display: grid;
-            gap: 8px;
-          }
-
-          .signature-meta-row {
-            display: grid;
-            grid-template-columns: 52px 1fr;
-            gap: 10px;
-            align-items: end;
-          }
-
-          .signature-meta-label {
-            font-size: 9px;
-            font-weight: 900;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: #64748b;
-          }
-
-          .signature-meta-line {
-            border-bottom: 1px solid #94a3b8;
-            min-height: 16px;
           }
 
           .stamp-card {
             border: 1px dashed #94a3b8;
             border-radius: ${isReceipt ? "12px" : "18px"};
             background: #f8fafc;
-            min-height: ${isReceipt ? "64px" : "150px"};
+            min-height: ${isReceipt ? "62px" : "150px"};
             padding: ${isReceipt ? "8px" : "16px"};
             display: flex;
             flex-direction: column;
@@ -690,10 +790,23 @@ function buildSalesDocumentHtml({
             align-items: center;
             justify-content: center;
             color: #94a3b8;
-            font-size: ${isReceipt ? "8.5px" : "12px"};
+            font-size: ${isReceipt ? "8px" : "12px"};
             font-weight: 700;
             text-align: center;
             padding: ${isReceipt ? "4px" : "10px"};
+          }
+
+          .document-footer {
+            margin-top: ${isReceipt ? "8px" : "18px"};
+            border-top: 3px solid #0f172a;
+            padding-top: ${isReceipt ? "6px" : "10px"};
+            text-align: center;
+            font-size: ${isReceipt ? "8px" : "11px"};
+            font-weight: 900;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #334155;
+            flex-shrink: 0;
           }
 
           .avoid-break {
@@ -706,6 +819,7 @@ function buildSalesDocumentHtml({
             body {
               background: #ffffff;
               padding: 0;
+              min-height: 100%;
             }
 
             body {
@@ -716,7 +830,7 @@ function buildSalesDocumentHtml({
             .page {
               margin: 0;
               width: auto;
-              min-height: auto;
+              min-height: calc(297mm - ${isReceipt ? "12mm" : "24mm"});
               box-shadow: none;
               padding: 0;
             }
@@ -731,11 +845,11 @@ function buildSalesDocumentHtml({
 
       <body>
         <div class="page">
-          <div class="top-band"></div>
+          <div class="document-main">
+            <div class="top-band"></div>
 
-          <div class="header avoid-break">
-            <div>
-              <div class="brand-wrap">
+            <div class="header avoid-break">
+              <div class="brand-panel">
                 <div class="logo-shell">
                   ${
                     biz.logoUrl
@@ -752,140 +866,169 @@ function buildSalesDocumentHtml({
                   <div class="doc-kicker">${esc(documentLabel)}</div>
                   <h1 class="branch-name">${esc(biz.branchLabel)}</h1>
                   <div class="company-name">${esc(biz.businessName)}</div>
+                </div>
 
-                  <div class="contact-lines">
-                    ${contactRows}
-                  </div>
+                <div class="document-chip">${esc(documentLabel)}</div>
+
+                <div class="contact-lines">
+                  ${contactRows}
+                </div>
+              </div>
+
+              <div class="meta-panel">
+                <div class="meta-row">
+                  <span class="label">${esc(documentLabel)} No</span>
+                  <span class="value">${esc(documentNumber)}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="label">Sale number</span>
+                  <span class="value">${esc(sale.sale.saleNumber)}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="label">Completed</span>
+                  <span class="value">${esc(completedAt)}</span>
+                </div>
+                <div class="meta-row">
+                  <span class="label">Payment status</span>
+                  <span class="value">${
+                    totals.balanceCents === 0 ? "Fully paid" : "Balance due"
+                  }</span>
                 </div>
               </div>
             </div>
 
-            <div class="meta-panel">
-              <div class="meta-row">
-                <span class="label">${esc(documentLabel)} No</span>
-                <span class="value">${esc(documentNumber)}</span>
+            <div class="section-grid">
+              <div class="card avoid-break">
+                <div class="card-title">${
+                  isDeliveryNote ? "Deliver To" : "Bill To"
+                }</div>
+                <div class="line"><strong>Name:</strong> ${esc(
+                  customerName,
+                )}</div>
+                <div class="line"><strong>Selling location:</strong> ${esc(
+                  sale.sale.branchName,
+                )}</div>
+                <div class="line"><strong>Handled by:</strong> ${esc(
+                  sale.sale.createdByName || "Not shown",
+                )}</div>
               </div>
-              <div class="meta-row">
-                <span class="label">Sale number</span>
-                <span class="value">${esc(sale.sale.saleNumber)}</span>
-              </div>
-              <div class="meta-row">
-                <span class="label">Completed</span>
-                <span class="value">${esc(completedAt)}</span>
-              </div>
-              <div class="meta-row">
-                <span class="label">Payment status</span>
-                <span class="value">${
-                  totals.balanceCents === 0 ? "Fully paid" : "Balance due"
-                }</span>
-              </div>
-            </div>
-          </div>
 
-          <div class="section-grid">
-            <div class="card avoid-break">
-              <div class="card-title">${
-                isDeliveryNote ? "Deliver To" : "Bill To"
-              }</div>
-              <div class="line"><strong>Name:</strong> ${esc(customerName)}</div>
-              <div class="line"><strong>Selling location:</strong> ${esc(
-                sale.sale.branchName,
-              )}</div>
-              <div class="line"><strong>Handled by:</strong> ${esc(
-                sale.sale.createdByName || "Not shown",
-              )}</div>
+              ${bankRows}
             </div>
 
-            ${bankRows}
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="width:42px;">#</th>
-                <th>Item</th>
-                <th style="width:62px;" class="right">Qty</th>
-                ${
-                  isDeliveryNote
-                    ? ""
-                    : `
-                      <th style="width:108px;" class="right">Unit Price</th>
-                      <th style="width:118px;" class="right">Line Total</th>
-                    `
-                }
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                rows ||
-                `<tr><td colspan="${
-                  isDeliveryNote ? "3" : "5"
-                }" style="text-align:center;">No items.</td></tr>`
-              }
-            </tbody>
-          </table>
-
-          ${
-            isDeliveryNote
-              ? ""
-              : `
-                <div class="summary-row avoid-break">
-                  <div></div>
-                  <div class="totals">
-                    ${totalRows}
-                  </div>
-                </div>
-
-                <section class="payment-section avoid-break">
-                  <div class="card">
-                    <div class="card-title">Payment</div>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Method</th>
-                          <th class="right">Amount</th>
-                          <th>Received by</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:34px;">#</th>
+                  <th>Item</th>
+                  <th style="width:52px;" class="right">Qty</th>
+                  ${
+                    isDeliveryNote
+                      ? ""
+                      : `
+                        <th style="width:92px;" class="right">Unit Price</th>
                         ${
-                          paymentRows ||
-                          `<tr><td colspan="3" style="text-align:center;">No payments.</td></tr>`
+                          showLineTax
+                            ? `
+                              <th style="width:58px;" class="right">VAT %</th>
+                              <th style="width:86px;" class="right">VAT Amount</th>
+                            `
+                            : ""
                         }
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              `
-          }
+                        <th style="width:98px;" class="right">Total</th>
+                      `
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  rows ||
+                  `<tr><td colspan="${tableColumnCount}" style="text-align:center;">No items.</td></tr>`
+                }
+              </tbody>
+            </table>
 
-          <div class="signatures">
-            <div class="signature-card">
-              <div class="signature-title">${
-                isDeliveryNote ? "Released By" : "Prepared By"
-              }</div>
-              <div class="signature-space"></div>
-              <div class="signature-line">${esc(
-                sale.sale.createdByName || "",
-              )}</div>
+            <div class="product-fill"></div>
 
-              ${
-                isReceipt
-                  ? ""
-                  : `
-                    <div class="signature-meta">
-                      <div class="signature-meta-row">
-                        <div class="signature-meta-label">Date</div>
-                        <div class="signature-meta-line"></div>
+            ${
+              isDeliveryNote
+                ? ""
+                : `
+                  <div class="document-lower">
+                    <div class="summary-row avoid-break">
+                      <div>
+                        ${vatSummary}
+                      </div>
+
+                      <div class="totals">
+                        ${totalRows}
                       </div>
                     </div>
-                  `
-              }
-            </div>
 
-            <div class="stamp-card">
-              <div class="stamp-title">Company Stamp</div>
-              <div class="stamp-space">Official Stamp Area</div>
+                    <section class="payment-section avoid-break">
+                      <div class="card">
+                        <div class="card-title">Payment</div>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Method</th>
+                              <th class="right">Amount</th>
+                              <th>Received by</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${
+                              paymentRows ||
+                              `<tr><td colspan="3" style="text-align:center;">No payments.</td></tr>`
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+
+                    <div class="signatures">
+                      <div class="signature-card">
+                        <div class="signature-title">Prepared By</div>
+                        <div class="signature-space"></div>
+                        <div class="signature-line">${esc(
+                          sale.sale.createdByName || "",
+                        )}</div>
+                      </div>
+
+                      <div class="stamp-card">
+                        <div class="stamp-title">Company Stamp</div>
+                        <div class="stamp-space">Official Stamp Area</div>
+                      </div>
+                    </div>
+                  </div>
+                `
+            }
+
+            ${
+              isDeliveryNote
+                ? `
+                  <div class="document-lower">
+                    <div class="signatures">
+                      <div class="signature-card">
+                        <div class="signature-title">Released By</div>
+                        <div class="signature-space"></div>
+                        <div class="signature-line">${esc(
+                          sale.sale.createdByName || "",
+                        )}</div>
+                      </div>
+
+                      <div class="stamp-card">
+                        <div class="stamp-title">Company Stamp</div>
+                        <div class="stamp-space">Official Stamp Area</div>
+                      </div>
+                    </div>
+                  </div>
+                `
+                : ""
+            }
+
+            <div class="document-footer">
+              Thank you for your business.
             </div>
           </div>
         </div>
@@ -917,15 +1060,16 @@ function buildDocumentTotals({
         settings.showTaxOnInvoices));
 
   const taxRateBasisPoints = Math.max(0, settings.taxRateBasisPoints || 0);
-  const taxLabel = `${settings.taxLabel || "Tax"} ${formatTaxRate(
-    taxRateBasisPoints,
-  )}`;
+  const taxRateText = formatTaxRate(taxRateBasisPoints);
+  const taxLabel = `${settings.taxLabel || "Tax"} ${taxRateText}`;
 
   if (!shouldShowTax || taxRateBasisPoints === 0) {
     return {
       subtotalLabel: "Total",
       subtotalCents: sale.sale.totalCents,
       taxLabel,
+      taxRateText,
+      taxRateBasisPoints,
       taxCents: 0,
       totalCents: sale.sale.totalCents,
       paidCents: sale.sale.paidCents,
@@ -948,6 +1092,8 @@ function buildDocumentTotals({
       subtotalLabel: "Subtotal",
       subtotalCents,
       taxLabel,
+      taxRateText,
+      taxRateBasisPoints,
       taxCents,
       totalCents,
       paidCents: sale.sale.paidCents,
@@ -966,12 +1112,42 @@ function buildDocumentTotals({
     subtotalLabel: `Subtotal before ${settings.taxLabel || "tax"}`,
     subtotalCents,
     taxLabel,
+    taxRateText,
+    taxRateBasisPoints,
     taxCents,
     totalCents,
     paidCents: sale.sale.paidCents,
     balanceCents: sale.sale.balanceCents,
     shouldShowTax: true,
   };
+}
+
+function buildVatSummary({
+  taxRateText,
+  subtotalCents,
+  taxCents,
+  taxLabel,
+}: {
+  taxRateText: string;
+  subtotalCents: number;
+  taxCents: number;
+  taxLabel: string;
+}) {
+  return `
+    <div class="vat-summary">
+      <div class="vat-summary-title">${esc(taxLabel)} Summary</div>
+
+      <div class="vat-summary-grid">
+        <span class="vat-summary-muted">${esc(taxLabel)} %</span>
+        <span class="vat-summary-muted">Net amount</span>
+        <span class="vat-summary-muted">${esc(taxLabel)} amount</span>
+
+        <strong>${esc(taxRateText)}</strong>
+        <strong>${esc(moneyLine(subtotalCents))}</strong>
+        <strong>${esc(moneyLine(taxCents))}</strong>
+      </div>
+    </div>
+  `;
 }
 
 function buildTotalRows(totals: DocumentTotals) {
@@ -985,7 +1161,7 @@ function buildTotalRows(totals: DocumentTotals) {
         <span>Paid</span>
         <strong>${esc(moneyLine(totals.paidCents))}</strong>
       </div>
-      <div class="total-row grand">
+      <div class="total-row grand total-bar">
         <span>Balance</span>
         <strong>${esc(moneyLine(totals.balanceCents))}</strong>
       </div>
@@ -1001,7 +1177,7 @@ function buildTotalRows(totals: DocumentTotals) {
       <span>${esc(totals.taxLabel)}</span>
       <strong>${esc(moneyLine(totals.taxCents))}</strong>
     </div>
-    <div class="total-row grand">
+    <div class="total-row grand total-bar">
       <span>Total</span>
       <strong>${esc(moneyLine(totals.totalCents))}</strong>
     </div>
@@ -1014,6 +1190,28 @@ function buildTotalRows(totals: DocumentTotals) {
       <strong>${esc(moneyLine(totals.balanceCents))}</strong>
     </div>
   `;
+}
+
+function calculateLineTaxCents({
+  lineTotalCents,
+  taxRateBasisPoints,
+  taxMode,
+}: {
+  lineTotalCents: number;
+  taxRateBasisPoints: number;
+  taxMode: BusinessDocumentSettings["taxMode"];
+}) {
+  if (taxRateBasisPoints <= 0) {
+    return 0;
+  }
+
+  if (taxMode === "added_on_top") {
+    return Math.round((lineTotalCents * taxRateBasisPoints) / 10000);
+  }
+
+  return Math.round(
+    (lineTotalCents * taxRateBasisPoints) / (10000 + taxRateBasisPoints),
+  );
 }
 
 function printDocument(title: string, html: string) {
@@ -1122,7 +1320,9 @@ function getBusinessIdentity(
   };
 }
 
-function normalizeBankAccounts(value: unknown): BusinessIdentity["bankAccounts"] {
+function normalizeBankAccounts(
+  value: unknown,
+): BusinessIdentity["bankAccounts"] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -1159,7 +1359,7 @@ function normalizeBankAccounts(value: unknown): BusinessIdentity["bankAccounts"]
     .filter((account): account is BusinessIdentity["bankAccounts"][number] => {
       return Boolean(
         account &&
-          (account.bankName || account.accountName || account.accountNumber),
+        (account.bankName || account.accountName || account.accountNumber),
       );
     });
 }
