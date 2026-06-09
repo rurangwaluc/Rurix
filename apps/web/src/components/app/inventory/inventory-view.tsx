@@ -46,8 +46,8 @@ import { SuppliersPanel } from "./suppliers-panel";
 import { StockTransfersPanel } from "./stock-transfers-panel";
 import { PurchaseOrdersPanel } from "./purchase-orders-panel";
 
-const STOCK_PAGE_SIZE = 6;
-const CATALOG_PAGE_SIZE = 6;
+const STOCK_PAGE_SIZE = 5;
+const CATALOG_PAGE_SIZE = 5;
 const HISTORY_PAGE_SIZE = 5;
 
 type ProductForm = {
@@ -1777,6 +1777,19 @@ function ActionCard({
   );
 }
 
+function CompactNumber({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="mt-2 flex items-center justify-between gap-3 md:mt-0 md:block md:text-right">
+      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+        {label}
+      </span>
+      <span className="whitespace-nowrap text-sm font-black">
+        {value.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
 function StockCards({
   stock,
   canMoveStock,
@@ -1799,79 +1812,130 @@ function StockCards({
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {stock.map((row) => (
-        <article
-          key={row.id}
-          className="rounded-[1.75rem] border border-border bg-surface p-4 shadow-card transition hover:border-primary/50 hover:bg-primary/5"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="break-words text-lg font-black">{row.itemName}</h3>
-              <div className="mt-2 grid gap-1 text-xs font-bold text-muted-foreground">
-                <span>Location: {row.branchName}</span>
-                {row.sku ? <span>Product code: {row.sku}</span> : null}
-                {row.barcode ? <span>Barcode: {row.barcode}</span> : null}
-              </div>
-            </div>
-            {row.isLowStock ? (
-              <StatusBadge variant="warning">Low stock</StatusBadge>
-            ) : (
-              <StatusBadge variant="success">Healthy</StatusBadge>
-            )}
-          </div>
+    <section className="min-w-0 overflow-hidden rounded-section border border-border bg-surface shadow-card">
+      <div className="hidden border-b border-border bg-background/70 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.55fr)_minmax(0,0.9fr)_92px_112px_118px] md:gap-x-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,0.95fr)_100px_126px_132px] lg:gap-x-5">
+        <div>Product</div>
+        <div>Location</div>
+        <div className="text-right">Available</div>
+        <div className="text-center">Status</div>
+        <div className="text-right">Action</div>
+      </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-2 min-[360px]:grid-cols-3">
-            <MiniMetric label="Available" value={row.quantityAvailable} />
-            <MiniMetric label="Damaged" value={row.quantityDamaged} />
-            <MiniMetric label="On hand" value={row.quantityOnHand} />
-          </div>
+      <div className="divide-y divide-border md:divide-y-0">
+        {stock.map((row) => {
+          const isHealthy = !row.isLowStock;
+          const statusLabel = row.isLowStock ? "Low stock" : "Enough stock";
 
-          <div className="mt-4 grid gap-2">
-            <DetailRow
-              label="Selling price"
-              value={money(row.sellingPriceCents)}
-            />
-            <DetailRow
-              label="Alert when available reaches"
-              value={
-                row.lowStockAlertQuantity > 0
-                  ? row.lowStockAlertQuantity.toLocaleString()
-                  : "Alert off"
-              }
-            />
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
-            <button
-              type="button"
+          return (
+            <article
+              key={row.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onOpenItem(row.itemId)}
-              className="rounded-2xl border border-border bg-background px-3 py-3 text-sm font-black text-foreground transition hover:border-primary/50"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenItem(row.itemId);
+                }
+              }}
+              className="cursor-pointer px-4 py-3 transition hover:bg-muted/45 focus:bg-muted/45 focus:outline-none sm:px-5 md:grid md:grid-cols-[minmax(0,1.55fr)_minmax(0,0.9fr)_92px_112px_118px] md:items-center md:gap-x-4 md:border-b md:border-border md:px-4 md:py-2.5 md:last:border-b-0 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,0.95fr)_100px_126px_132px] lg:gap-x-5"
             >
-              Details
-            </button>
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-start justify-between gap-3 md:block">
+                  <div className="min-w-0">
+                    <p className="break-words text-[15px] font-black leading-5 text-foreground md:truncate md:text-sm">
+                      {row.itemName}
+                    </p>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold text-muted-foreground">
+                      <span className="max-w-full truncate">
+                        {row.sku || "No product code"}
+                      </span>
+                      {row.quantityDamaged > 0 ? (
+                        <span className="rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-warning md:hidden">
+                          {row.quantityDamaged.toLocaleString()} damaged
+                        </span>
+                      ) : null}
+                      {row.categoryName ? (
+                        <span className="hidden max-w-full truncate lg:inline">
+                          {row.categoryName}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
 
-            {canMoveStock ? (
-              <button
-                type="button"
-                onClick={() => onUpdateAlert(row)}
-                className="rounded-2xl bg-primary px-3 py-3 text-sm font-black text-primary-foreground shadow-soft transition hover:brightness-110"
-              >
-                Update alert
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onOpenItem(row.itemId)}
-                className="rounded-2xl bg-primary px-3 py-3 text-sm font-black text-primary-foreground shadow-soft transition hover:brightness-110"
-              >
-                Open
-              </button>
-            )}
-          </div>
-        </article>
-      ))}
-    </div>
+                  <span className="md:hidden">
+                    <StatusBadge variant={isHealthy ? "success" : "warning"}>
+                      {statusLabel}
+                    </StatusBadge>
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 min-w-0 md:mt-0">
+                <p className="truncate text-sm font-black text-foreground md:font-bold md:text-muted-foreground">
+                  {row.branchName}
+                </p>
+                <p className="mt-1 text-xs font-bold text-muted-foreground md:hidden">
+                  Selling location
+                </p>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-border bg-background p-3 md:mt-0 md:border-0 md:bg-transparent md:p-0 md:text-right">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                  Available
+                </p>
+                <p className="mt-1 whitespace-nowrap text-2xl font-black md:mt-0 md:text-sm">
+                  {row.quantityAvailable.toLocaleString()}
+                </p>
+              </div>
+
+              <div className="hidden md:block md:text-center">
+                <StatusBadge variant={isHealthy ? "success" : "warning"}>
+                  {statusLabel}
+                </StatusBadge>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 md:mt-0 md:flex md:justify-end">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenItem(row.itemId);
+                  }}
+                  className="inline-flex items-center justify-center rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-black text-foreground transition hover:border-primary/50 md:hidden"
+                >
+                  Open details
+                </button>
+
+                {canMoveStock ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onUpdateAlert(row);
+                    }}
+                    className="inline-flex items-center justify-center rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-black text-foreground transition hover:border-primary/50 hover:text-primary md:w-auto md:py-2"
+                  >
+                    Set level
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenItem(row.itemId);
+                    }}
+                    className="hidden rounded-xl border border-border bg-background px-3 py-2 text-xs font-black text-foreground transition hover:border-primary/50 md:inline-flex"
+                  >
+                    Open
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1899,109 +1963,140 @@ function CatalogList({
   }
 
   return (
-    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {items.map((item) => (
-        <article
-          key={item.id}
-          className="flex min-h-full flex-col rounded-[1.75rem] border border-border bg-surface p-4 shadow-card transition hover:border-primary/50 hover:bg-primary/5"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge
-              variant={item.kind === "PRODUCT" ? "success" : "primary"}
-            >
-              {item.kind === "PRODUCT" ? "Product" : "Service"}
-            </StatusBadge>
-            <StatusBadge
-              variant={item.status === "active" ? "success" : "warning"}
-            >
-              {item.status === "active" ? "Active" : "Paused"}
-            </StatusBadge>
-          </div>
+    <section className="min-w-0 overflow-hidden rounded-section border border-border bg-surface shadow-card">
+      <div className="hidden border-b border-border bg-background/70 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.6fr)_92px_minmax(0,1fr)_124px_92px_96px] md:gap-x-4 lg:grid-cols-[minmax(0,1.8fr)_98px_minmax(0,1.05fr)_136px_100px_104px] lg:gap-x-5">
+        <div>Name</div>
+        <div>Type</div>
+        <div>Category</div>
+        <div className="text-right">Price</div>
+        <div className="text-center">Status</div>
+        <div className="text-right">Action</div>
+      </div>
 
-          <button
-            type="button"
-            onClick={() => onOpenItem(item)}
-            className="mt-4 block flex-1 text-left"
-          >
-            <h3 className="break-words text-xl font-black">{item.name}</h3>
+      <div className="divide-y divide-border md:divide-y-0">
+        {items.map((item) => {
+          const typeLabel = item.kind === "PRODUCT" ? "Product" : "Service";
+          const codeLabel = item.sku || "No code";
+          const statusLabel = item.status === "active" ? "Active" : "Paused";
 
-            <div className="mt-3 grid gap-2 text-sm font-bold text-muted-foreground">
-              <InfoLine
-                label="Category"
-                value={item.categoryName || "Not set"}
-              />
-              <InfoLine
-                label={
-                  item.kind === "PRODUCT" ? "Product code" : "Service code"
-                }
-                value={item.sku || "Not set"}
-              />
-
-              {item.kind === "PRODUCT" ? (
-                <>
-                  <InfoLine label="Barcode" value={item.barcode || "Not set"} />
-                  <InfoLine
-                    label="Stock tracking"
-                    value={item.trackStock ? "On" : "Off"}
-                  />
-                </>
-              ) : (
-                <InfoLine
-                  label="Time estimate"
-                  value={
-                    item.serviceDurationMinutes
-                      ? `${item.serviceDurationMinutes} minutes`
-                      : "Not set"
-                  }
-                />
-              )}
-            </div>
-
-            {item.description ? (
-              <p className="mt-4 line-clamp-3 text-sm font-semibold leading-6 text-muted-foreground">
-                {item.description}
-              </p>
-            ) : null}
-
-            <div className="mt-4 rounded-2xl border border-border bg-background p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
-                Selling price
-              </p>
-              <p className="mt-1 text-2xl font-black">
-                {money(item.sellingPriceCents)}
-              </p>
-            </div>
-          </button>
-
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
+          return (
+            <article
+              key={item.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onOpenItem(item)}
-              className="rounded-2xl border border-border bg-background px-3 py-3 text-sm font-black text-foreground"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenItem(item);
+                }
+              }}
+              className="cursor-pointer px-4 py-3 transition hover:bg-muted/45 focus:bg-muted/45 focus:outline-none sm:px-5 md:grid md:grid-cols-[minmax(0,1.6fr)_92px_minmax(0,1fr)_124px_92px_96px] md:items-center md:gap-x-4 md:border-b md:border-border md:px-4 md:py-2.5 md:last:border-b-0 lg:grid-cols-[minmax(0,1.8fr)_98px_minmax(0,1.05fr)_136px_100px_104px] lg:gap-x-5"
             >
-              Details
-            </button>
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-start justify-between gap-3 md:block">
+                  <div className="min-w-0">
+                    <p className="break-words text-[15px] font-black leading-5 text-foreground md:truncate md:text-sm">
+                      {item.name}
+                    </p>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold text-muted-foreground">
+                      <span className="max-w-full truncate">{codeLabel}</span>
+                      {item.kind === "PRODUCT" ? (
+                        <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] md:hidden">
+                          {item.trackStock
+                            ? "Stock tracked"
+                            : "No stock tracking"}
+                        </span>
+                      ) : item.serviceDurationMinutes ? (
+                        <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] md:hidden">
+                          {item.serviceDurationMinutes} min
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
 
-            {canManageCatalog ? (
-              <button
-                type="button"
-                onClick={() => onEditItem(item)}
-                className="rounded-2xl bg-primary px-3 py-3 text-sm font-black text-primary-foreground shadow-soft"
-              >
-                Edit
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onOpenItem(item)}
-                className="rounded-2xl bg-primary px-3 py-3 text-sm font-black text-primary-foreground shadow-soft"
-              >
-                Open
-              </button>
-            )}
-          </div>
-        </article>
-      ))}
+                  <StatusBadge
+                    variant={item.status === "active" ? "success" : "warning"}
+                  >
+                    {statusLabel}
+                  </StatusBadge>
+                </div>
+              </div>
+
+              <div className="mt-3 hidden md:block md:mt-0">
+                <StatusBadge
+                  variant={item.kind === "PRODUCT" ? "success" : "primary"}
+                >
+                  {typeLabel}
+                </StatusBadge>
+              </div>
+
+              <div className="mt-3 min-w-0 md:mt-0">
+                <p className="truncate text-sm font-black text-foreground md:font-bold md:text-muted-foreground">
+                  {item.categoryName || "No category"}
+                </p>
+                <p className="mt-1 text-xs font-bold text-muted-foreground md:hidden">
+                  {typeLabel}
+                </p>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-border bg-background p-3 md:mt-0 md:border-0 md:bg-transparent md:p-0 md:text-right">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                  Selling price
+                </p>
+                <p className="mt-1 whitespace-nowrap text-2xl font-black md:mt-0 md:text-sm">
+                  {money(item.sellingPriceCents)}
+                </p>
+              </div>
+
+              <div className="hidden md:block md:text-center">
+                <StatusBadge
+                  variant={item.status === "active" ? "success" : "warning"}
+                >
+                  {statusLabel}
+                </StatusBadge>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 md:mt-0 md:flex md:justify-end">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenItem(item);
+                  }}
+                  className="inline-flex items-center justify-center rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-black text-foreground transition hover:border-primary/50 md:hidden"
+                >
+                  Open details
+                </button>
+
+                {canManageCatalog ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onEditItem(item);
+                    }}
+                    className="inline-flex items-center justify-center rounded-xl bg-primary px-3 py-2.5 text-xs font-black text-primary-foreground shadow-soft transition hover:brightness-110 md:w-auto md:py-2"
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenItem(item);
+                    }}
+                    className="hidden rounded-xl border border-border bg-background px-3 py-2 text-xs font-black text-foreground transition hover:border-primary/50 md:inline-flex"
+                  >
+                    Open
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -2411,77 +2506,93 @@ function MovementList({
 
   return (
     <section className="space-y-4">
-      <div className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-black">Stock history</h2>
-            <p className="mt-1 text-sm font-semibold text-muted-foreground">
-              Review what changed, where it changed, who recorded it, and why.
+      <section className="min-w-0 overflow-hidden rounded-section border border-border bg-surface shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
+          <div className="min-w-0">
+            <h2 className="text-lg font-black">Stock history</h2>
+            <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+              Review what changed and where it happened.
             </p>
           </div>
           <StatusBadge variant="primary">
-            {visibleMovements.length} shown
+            {visibleMovements.length.toLocaleString()} shown
           </StatusBadge>
         </div>
 
-        <div className="space-y-3">
-          {visibleMovements.map((movement) => (
-            <button
-              key={movement.id}
-              type="button"
-              onClick={() => onOpenItem(movement.itemId)}
-              className="block w-full rounded-[1.75rem] border border-border bg-background p-4 text-left transition hover:border-primary/50 hover:bg-primary/5"
-            >
-              <div className="grid gap-4 xl:grid-cols-[1fr_330px] xl:items-start">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <MovementBadge type={movement.movementType} />
-                    <span className="rounded-full bg-surface px-3 py-1 text-xs font-black text-muted-foreground">
-                      {new Date(movement.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  <h3 className="mt-3 break-words text-lg font-black">
-                    {movement.itemName}
-                  </h3>
-                  <div className="mt-2 grid gap-1 text-sm font-bold text-muted-foreground">
-                    <span>Location: {movement.branchName}</span>
-                    <span>Reason: {movement.reason || "Stock change"}</span>
-                    {movement.reference ? (
-                      <span>Reference: {movement.reference}</span>
-                    ) : null}
-                    {movement.actorName ? (
-                      <span>Recorded by: {movement.actorName}</span>
-                    ) : null}
-                  </div>
-                  {movement.note ? (
-                    <p className="mt-3 text-sm font-semibold leading-6 text-muted-foreground">
-                      {movement.note}
-                    </p>
-                  ) : null}
-                </div>
+        <div className="hidden border-b border-border bg-background/70 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.45fr)_minmax(0,0.9fr)_136px_132px_118px] md:gap-x-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)_148px_144px_132px] lg:gap-x-5">
+          <div>Product</div>
+          <div>Location</div>
+          <div>Change</div>
+          <div className="text-right">Available</div>
+          <div className="text-right">Date</div>
+        </div>
 
-                <div className="grid min-w-0 grid-cols-3 gap-1.5 rounded-3xl border border-border bg-surface p-1.5 text-center sm:gap-2 sm:p-2">
-                  <MovementMiniStat
-                    label="Available"
-                    before={movement.quantityAvailableBefore}
-                    after={movement.quantityAvailableAfter}
-                  />
-                  <MovementMiniStat
-                    label="Damaged"
-                    before={movement.quantityDamagedBefore}
-                    after={movement.quantityDamagedAfter}
-                  />
-                  <MovementMiniStat
-                    label="On hand"
-                    before={movement.quantityOnHandBefore}
-                    after={movement.quantityOnHandAfter}
-                  />
+        <div className="divide-y divide-border md:divide-y-0">
+          {visibleMovements.map((movement) => (
+            <article
+              key={movement.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpenItem(movement.itemId)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenItem(movement.itemId);
+                }
+              }}
+              className="cursor-pointer px-4 py-3 transition hover:bg-muted/45 focus:bg-muted/45 focus:outline-none sm:px-5 md:grid md:grid-cols-[minmax(0,1.45fr)_minmax(0,0.9fr)_136px_132px_118px] md:items-center md:gap-x-4 md:border-b md:border-border md:px-4 md:py-2.5 md:last:border-b-0 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)_148px_144px_132px] lg:gap-x-5"
+            >
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-start justify-between gap-3 md:block">
+                  <div className="min-w-0">
+                    <p className="break-words text-[15px] font-black leading-5 text-foreground md:truncate md:text-sm">
+                      {movement.itemName}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-bold text-muted-foreground md:hidden">
+                      {movement.actorName
+                        ? `Recorded by ${movement.actorName}`
+                        : "Stock change"}
+                    </p>
+                  </div>
+                  <MovementBadge type={movement.movementType} />
                 </div>
               </div>
-            </button>
+
+              <div className="mt-3 min-w-0 md:mt-0">
+                <p className="truncate text-sm font-black text-foreground md:font-bold md:text-muted-foreground">
+                  {movement.branchName}
+                </p>
+                <p className="mt-1 text-xs font-bold text-muted-foreground md:hidden">
+                  Selling location
+                </p>
+              </div>
+
+              <div className="mt-3 hidden md:block md:mt-0">
+                <MovementBadge type={movement.movementType} />
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-border bg-background p-3 md:mt-0 md:border-0 md:bg-transparent md:p-0 md:text-right">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                  Available stock
+                </p>
+                <p className="mt-1 whitespace-nowrap text-lg font-black md:mt-0 md:text-sm">
+                  {movement.quantityAvailableBefore.toLocaleString()} →{" "}
+                  {movement.quantityAvailableAfter.toLocaleString()}
+                </p>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between gap-3 md:mt-0 md:block md:text-right">
+                <span className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                  Date
+                </span>
+                <span className="whitespace-nowrap text-sm font-bold text-muted-foreground">
+                  {new Date(movement.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+            </article>
           ))}
         </div>
-      </div>
+      </section>
 
       {hasMore ? (
         <LoadMoreButton
@@ -2559,7 +2670,7 @@ function MobileActionBar({
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-3 py-2.5 shadow-2xl backdrop-blur-xl lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/90 px-3 py-2 shadow-2xl backdrop-blur-xl lg:hidden">
       <div
         className={[
           "mx-auto grid max-w-xl gap-2",
@@ -2602,7 +2713,7 @@ function MobileActionButton({
       type="button"
       onClick={onClick}
       className={[
-        "flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center text-[10px] font-black leading-tight transition active:scale-[0.98]",
+        "flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-1.5 text-center text-[10px] font-black leading-tight transition active:scale-[0.98]",
         tone === "primary"
           ? "border-primary bg-primary text-primary-foreground shadow-soft"
           : tone === "warning"
@@ -2612,7 +2723,7 @@ function MobileActionButton({
     >
       <span
         className={[
-          "flex h-7 w-7 items-center justify-center rounded-xl",
+          "flex h-6 w-6 items-center justify-center rounded-xl",
           tone === "primary"
             ? "bg-primary-foreground/15"
             : tone === "warning"
@@ -2620,7 +2731,7 @@ function MobileActionButton({
               : "bg-primary/10 text-primary",
         ].join(" ")}
       >
-        <Icon className="h-4 w-4" />
+        <Icon className="h-3.5 w-3.5" />
       </span>
       <span className="line-clamp-2 max-w-full break-words">{label}</span>
     </button>

@@ -50,8 +50,8 @@ type CartLine = {
 
 type CustomerMode = "walk_in" | "existing" | "new";
 
-const DEFAULT_PRODUCT_LIMIT = 12;
-const SEARCH_PRODUCT_LIMIT = 20;
+const DEFAULT_PRODUCT_LIMIT = 5;
+const SEARCH_PRODUCT_LIMIT = 8;
 const DEFAULT_SALES_VISIBLE_COUNT = 5;
 const SALES_PAGE_SIZE = 5;
 
@@ -656,7 +656,8 @@ function ProductSearchPanel({
         <div className="min-w-0">
           <h2 className="text-lg font-black">Products</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
-            Add products from {selectedBranchName}.
+            Best sellers from {selectedBranchName}. Use search for more
+            products.
           </p>
         </div>
 
