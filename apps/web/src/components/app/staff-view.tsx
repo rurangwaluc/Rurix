@@ -1,5 +1,7 @@
 "use client";
 
+import type * as React from "react";
+
 import {
   ArrowRight,
   CheckCircle2,
@@ -12,6 +14,7 @@ import {
   Phone,
   Plus,
   RefreshCcw,
+  Search,
   Trash2,
   UserRound,
   X,
@@ -27,6 +30,7 @@ import type {
   StaffLocationAssignFormState,
   StaffPasswordFormState,
 } from "./app-types";
+import { useMemo, useState } from "react";
 
 import { AsyncButton } from "../async-button";
 import { StatusBadge } from "../status-badge";
@@ -149,9 +153,23 @@ export function StaffView({
   onSetStaffPasswordForm,
   onSetStaffLocationAssignForm,
 }: StaffViewProps) {
+  const [selectedStaffBranchId, setSelectedStaffBranchId] = useState("all");
+
+  const filteredStaff = useMemo(() => {
+    if (selectedStaffBranchId === "all") {
+      return staff;
+    }
+
+    return staff.filter((member) =>
+      member.locations.some(
+        (location) => location.id === selectedStaffBranchId,
+      ),
+    );
+  }, [selectedStaffBranchId, staff]);
+
   if (!canManageStaff && !canSeeStaff) {
     return (
-      <section className="rounded-section bg-surface p-6 shadow-card">
+      <section className="rounded-section border border-warning/25 bg-warning/10 p-6 shadow-card">
         <StatusBadge variant="warning">Limited access</StatusBadge>
         <h2 className="mt-4 text-2xl font-extrabold">
           Staff management is not available for your access.
@@ -165,35 +183,36 @@ export function StaffView({
 
   return (
     <>
-      <div className="space-y-5">
-        <section className="rounded-section bg-surface p-5 shadow-card sm:p-6">
-          <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
+      <div className="space-y-4">
+        <section className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="min-w-0">
               <StatusBadge variant="primary">Staff</StatusBadge>
               <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.035em] sm:text-3xl">
-                Staff access and responsibilities
+                Staff access
               </h2>
               <p className="mt-2 max-w-2xl text-sm font-semibold leading-7 text-muted-foreground">
-                Create staff, open full details, update information, assign or
-                remove responsibilities, and reset access.
+                Add staff, choose where they work, assign responsibilities, and
+                control access from one place.
               </p>
             </div>
 
-            <div className="rounded-panel bg-panel p-4">
-              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-muted-foreground">
-                Staff members
-              </p>
-              <p className="number-font mt-2 text-2xl font-extrabold">
-                {staff.length}
-              </p>
+            <div className="grid grid-cols-2 gap-2 sm:min-w-[360px]">
+              <SummaryCard label="Staff members" value={staff.length} />
+              <SummaryCard
+                label="Active"
+                value={
+                  staff.filter((member) => member.status === "active").length
+                }
+              />
             </div>
           </div>
         </section>
 
         <section
           className={[
-            "grid gap-5",
-            canManageStaff ? "xl:grid-cols-[0.9fr_1.1fr]" : "grid-cols-1",
+            "grid gap-4",
+            canManageStaff ? "xl:grid-cols-[390px_minmax(0,1fr)]" : "",
           ].join(" ")}
         >
           {canManageStaff ? (
@@ -210,10 +229,14 @@ export function StaffView({
           ) : null}
 
           <StaffList
-            staff={staff}
+            branches={context.branches}
+            staff={filteredStaff}
+            totalStaffCount={staff.length}
             isLoading={isStaffLoading}
+            selectedBranchId={selectedStaffBranchId}
             selectedStaffId={selectedStaff?.id || ""}
             changingStaffId={changingStaffId}
+            onSelectedBranchChange={setSelectedStaffBranchId}
             onSelectStaff={onSelectStaff}
             onToggleStatus={onToggleStaffStatus}
           />
@@ -273,21 +296,24 @@ function CreateStaffForm({
   return (
     <form
       onSubmit={onSubmit}
-      className="rounded-section bg-surface p-5 shadow-card sm:p-6"
+      className="rounded-section border border-border bg-surface p-4 shadow-card sm:p-5 xl:sticky xl:top-4 xl:self-start"
     >
-      <div className="mb-5 flex items-start justify-between gap-4 border-b border-border pb-5">
-        <div>
+      <div className="mb-4 flex items-start justify-between gap-4 border-b border-border pb-4">
+        <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-primary">
             New staff member
           </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em]">
-            Create staff access
+          <h2 className="mt-2 text-xl font-extrabold tracking-[-0.035em]">
+            Create access
           </h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+            Add the staff member and choose their first responsibility.
+          </p>
         </div>
-        <Plus className="h-6 w-6 text-primary" />
+        <Plus className="h-5 w-5 shrink-0 text-primary" />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3">
         <Field label="Full name">
           <input
             required
@@ -373,12 +399,12 @@ function CreateStaffForm({
 
       <RolePicker selectedRoles={staffForm.roles} onToggleRole={onToggleRole} />
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-5">
         <AsyncButton
           type="submit"
           isLoading={isCreatingStaff}
           loadingText="Creating staff..."
-          className="w-full sm:w-auto"
+          className="w-full"
         >
           Create staff
           <ArrowRight className="h-4 w-4" />
@@ -389,132 +415,203 @@ function CreateStaffForm({
 }
 
 function StaffList({
+  branches,
   staff,
+  totalStaffCount,
   isLoading,
+  selectedBranchId,
   selectedStaffId,
   changingStaffId,
+  onSelectedBranchChange,
   onSelectStaff,
   onToggleStatus,
 }: {
+  branches: CurrentUserResponse["branches"];
   staff: StaffMember[];
+  totalStaffCount: number;
   isLoading: boolean;
+  selectedBranchId: string;
   selectedStaffId: string;
   changingStaffId: string;
+  onSelectedBranchChange: (value: string) => void;
   onSelectStaff: (member: StaffMember) => void;
   onToggleStatus: (member: StaffMember) => void;
 }) {
   if (isLoading) {
     return (
-      <section className="rounded-section bg-surface p-5 shadow-card sm:p-6">
-        <div className="mb-5 h-8 w-48 animate-pulse-soft rounded-control bg-muted" />
-        <div className="space-y-3">
-          <div className="h-24 animate-pulse-soft rounded-panel bg-muted" />
-          <div className="h-24 animate-pulse-soft rounded-panel bg-muted" />
-          <div className="h-24 animate-pulse-soft rounded-panel bg-muted" />
+      <section className="overflow-hidden rounded-section border border-border bg-surface shadow-card">
+        <div className="border-b border-border px-4 py-4 sm:px-5">
+          <div className="h-5 w-40 animate-pulse-soft rounded-control bg-muted" />
+          <div className="mt-2 h-4 w-56 animate-pulse-soft rounded-control bg-muted" />
+        </div>
+        <div className="divide-y divide-border">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="px-4 py-4 sm:px-5">
+              <div className="h-5 w-44 animate-pulse-soft rounded-control bg-muted" />
+              <div className="mt-2 h-4 w-64 animate-pulse-soft rounded-control bg-muted" />
+            </div>
+          ))}
         </div>
       </section>
     );
   }
 
   return (
-    <section className="rounded-section bg-surface p-5 shadow-card sm:p-6">
-      <div className="mb-5 flex items-center justify-between gap-4 border-b border-border pb-5">
-        <div>
-          <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-primary">
-            Staff
+    <section className="min-w-0 overflow-hidden rounded-section border border-border bg-surface shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
+        <div className="min-w-0">
+          <h2 className="text-lg font-black">Staff members</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-muted-foreground">
+            Filter by location, then open a staff member to review access.
           </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em]">
-            Staff access
-          </h2>
         </div>
-        <StatusBadge variant="primary">{staff.length} total</StatusBadge>
+
+        <StatusBadge variant="primary">
+          {staff.length.toLocaleString()} of {totalStaffCount.toLocaleString()}
+        </StatusBadge>
+      </div>
+
+      <div className="grid gap-3 border-b border-border px-4 py-3 sm:px-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <label className="block min-w-0">
+          <span className="sr-only">Filter by location</span>
+          <select
+            value={selectedBranchId}
+            onChange={(event) => onSelectedBranchChange(event.target.value)}
+            className="h-11 w-full rounded-2xl border border-border bg-background px-3 text-sm font-black outline-none transition focus:border-primary"
+          >
+            <option value="all">All locations</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border bg-background px-3 text-sm font-bold text-muted-foreground">
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="truncate">
+            {selectedBranchId === "all"
+              ? "Showing staff from all locations"
+              : `Showing staff from ${
+                  branches.find((branch) => branch.id === selectedBranchId)
+                    ?.name || "selected location"
+                }`}
+          </span>
+        </div>
       </div>
 
       {staff.length === 0 ? (
-        <div className="rounded-panel border border-dashed border-border bg-background p-6 text-center">
-          <UserRound className="mx-auto h-8 w-8 text-primary" />
-          <h3 className="mt-4 text-lg font-extrabold">No staff members yet.</h3>
-          <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
-            Create the first staff member and assign their location and
-            responsibilities.
-          </p>
+        <div className="p-4 sm:p-5">
+          <div className="rounded-panel border border-dashed border-border bg-background p-6 text-center">
+            <UserRound className="mx-auto h-8 w-8 text-primary" />
+            <h3 className="mt-4 text-lg font-extrabold">No staff found</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-muted-foreground">
+              No staff member is assigned to this location yet.
+            </p>
+          </div>
         </div>
       ) : (
-        <div className="space-y-3">
-          {staff.map((member) => (
-            <article
-              key={member.id}
-              className={[
-                "rounded-panel border bg-background p-4 transition",
-                selectedStaffId === member.id
-                  ? "border-primary shadow-glow"
-                  : "border-border hover:border-primary/40",
-              ].join(" ")}
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <button
-                  type="button"
+        <>
+          <div className="hidden border-b border-border bg-background/70 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.95fr)_120px_96px] md:gap-x-4">
+            <div>Staff</div>
+            <div>Contact</div>
+            <div>Location</div>
+            <div>Status</div>
+            <div className="text-right">Action</div>
+          </div>
+
+          <div>
+            {staff.map((member) => {
+              const primaryLocation = getPrimaryLocation(member);
+              const roleSummary = getRoleSummary(member);
+              const isSelected = selectedStaffId === member.id;
+              const isActive = member.status === "active";
+
+              return (
+                <article
+                  key={member.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelectStaff(member)}
-                  className="min-w-0 flex-1 text-left"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectStaff(member);
+                    }
+                  }}
+                  className={[
+                    "cursor-pointer border-b border-border px-4 py-3 last:border-b-0 transition hover:bg-muted/45 focus:bg-muted/45 focus:outline-none sm:px-5 md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.95fr)_120px_96px] md:items-center md:gap-x-4 md:px-4",
+                    isSelected ? "bg-primary/5" : "",
+                  ].join(" ")}
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-extrabold tracking-[-0.03em]">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-foreground">
                       {member.fullName}
-                    </h3>
-                    <StatusBadge
-                      variant={
-                        member.status === "active" ? "success" : "danger"
-                      }
-                    >
-                      {member.status === "active" ? "Active" : "Disabled"}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-bold text-muted-foreground">
+                      {roleSummary}
+                    </p>
+                  </div>
+
+                  <div className="mt-3 min-w-0 md:mt-0">
+                    <p className="truncate text-sm font-bold text-foreground">
+                      {member.email}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-bold text-muted-foreground">
+                      {member.phone || "No phone"}
+                    </p>
+                  </div>
+
+                  <div className="mt-3 min-w-0 md:mt-0">
+                    <p className="truncate text-sm font-bold text-foreground">
+                      {primaryLocation}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-bold text-muted-foreground">
+                      {member.locations.length
+                        ? `${member.locations.length.toLocaleString()} location${
+                            member.locations.length === 1 ? "" : "s"
+                          }`
+                        : "No location assigned"}
+                    </p>
+                  </div>
+
+                  <div className="mt-3 md:mt-0">
+                    <StatusBadge variant={isActive ? "success" : "danger"}>
+                      {isActive ? "Active" : "Disabled"}
                     </StatusBadge>
                   </div>
 
-                  <ContactStack email={member.email} phone={member.phone} />
+                  <div className="mt-3 flex gap-2 md:mt-0 md:justify-end">
+                    <AsyncButton
+                      variant="secondary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelectStaff(member);
+                      }}
+                      className="h-9 flex-1 px-3 text-xs md:flex-none"
+                    >
+                      Open
+                    </AsyncButton>
 
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {member.locations.length ? (
-                      member.locations.flatMap((location) =>
-                        location.roles.map((role) => (
-                          <StatusBadge
-                            key={`${location.id}-${role}`}
-                            variant="neutral"
-                          >
-                            {formatRole(role)}
-                          </StatusBadge>
-                        )),
-                      )
-                    ) : (
-                      <span className="text-sm font-semibold text-muted-foreground">
-                        No location assigned.
-                      </span>
-                    )}
+                    <AsyncButton
+                      variant="secondary"
+                      isLoading={changingStaffId === member.id}
+                      loadingText="Saving..."
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleStatus(member);
+                      }}
+                      className="h-9 flex-1 px-3 text-xs md:flex-none"
+                    >
+                      {isActive ? "Disable" : "Activate"}
+                    </AsyncButton>
                   </div>
-                </button>
-
-                <div className="flex gap-2 sm:flex-col">
-                  <AsyncButton
-                    variant="secondary"
-                    onClick={() => onSelectStaff(member)}
-                    className="w-full sm:w-auto"
-                  >
-                    Details
-                  </AsyncButton>
-
-                  <AsyncButton
-                    variant="secondary"
-                    isLoading={changingStaffId === member.id}
-                    loadingText="Updating..."
-                    onClick={() => onToggleStatus(member)}
-                    className="w-full sm:w-auto"
-                  >
-                    {member.status === "active" ? "Disable" : "Activate"}
-                  </AsyncButton>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
+                </article>
+              );
+            })}
+          </div>
+        </>
       )}
     </section>
   );
@@ -642,7 +739,7 @@ function StaffDetailsDrawer({
                     className="rounded-control border border-border bg-background px-3 py-3"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm font-extrabold">
                           {location.name}
                           {location.isMain ? (
@@ -901,6 +998,23 @@ function StaffDetailsDrawer({
   );
 }
 
+function SummaryCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="min-w-0 rounded-3xl border border-border bg-background p-3 sm:p-4">
+      <p className="truncate text-[9px] font-black uppercase tracking-[0.14em] text-muted-foreground sm:text-[10px]">
+        {label}
+      </p>
+      <p className="mt-2 truncate text-lg font-black sm:text-xl">{value}</p>
+    </div>
+  );
+}
+
 function ContactStack({
   email,
   phone,
@@ -940,7 +1054,7 @@ function RolePicker({
         Responsibilities
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2">
         {availableRoles.map((role) => {
           const checked = selectedRoles.includes(role.value);
 
@@ -950,7 +1064,7 @@ function RolePicker({
               type="button"
               onClick={() => onToggleRole(role.value)}
               className={[
-                "rounded-panel border p-4 text-left transition",
+                "rounded-2xl border p-3 text-left transition",
                 checked
                   ? "border-primary bg-primary/10"
                   : "border-border bg-background hover:border-primary/45",
@@ -959,7 +1073,7 @@ function RolePicker({
               <div className="flex items-center gap-3">
                 <span
                   className={[
-                    "grid h-5 w-5 place-items-center rounded-full border",
+                    "grid h-5 w-5 shrink-0 place-items-center rounded-full border",
                     checked
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border",
@@ -1037,6 +1151,32 @@ function Field({
       {children}
     </label>
   );
+}
+
+function getPrimaryLocation(member: StaffMember) {
+  if (!member.locations.length) {
+    return "No location assigned";
+  }
+
+  const mainLocation = member.locations.find((location) => location.isMain);
+  return mainLocation?.name || member.locations[0]?.name || "Assigned";
+}
+
+function getRoleSummary(member: StaffMember) {
+  const roles = member.locations.flatMap((location) => location.roles);
+  const uniqueRoles = Array.from(new Set(roles));
+
+  const firstRole = uniqueRoles[0];
+
+  if (!firstRole) {
+    return "No responsibility assigned";
+  }
+
+  if (uniqueRoles.length === 1) {
+    return formatRole(firstRole);
+  }
+
+  return `${formatRole(firstRole)} + ${uniqueRoles.length - 1} more`;
 }
 
 function formatRole(role: string) {
